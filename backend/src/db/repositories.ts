@@ -1,6 +1,6 @@
 import { v4 as uuid } from "uuid";
 import { query } from "./connection.js";
-import type { DecisionRecord, BehavioralMemory, IdentityMemory, GrowthProfile, Task, TaskListItem } from "../types/index.js";
+import type { DecisionRecord, BehavioralMemory, IdentityMemory, GrowthProfile, Task, TaskListItem, TaskSummary } from "../types/index.js";
 import { GROWTH_LEVELS } from "../config.js";
 
 export const DecisionRepo = {
@@ -202,6 +202,24 @@ export const TaskRepo = {
       `UPDATE tasks SET tokens_used=$2, steps_used=steps_used+1, updated_at=NOW() WHERE id=$1`,
       [taskId, tokensUsed]
     );
+  },
+
+  async getSummary(taskId: string): Promise<TaskSummary | null> {
+    const result = await query(`SELECT * FROM task_summaries WHERE task_id=$1`, [taskId]);
+    if (result.rows.length === 0) return null;
+    const r: any = result.rows[0];
+    return {
+      task_id: r.task_id,
+      summary_id: r.id,
+      goal: r.goal || null,
+      confirmed_facts: r.confirmed_facts || [],
+      completed_steps: r.completed_steps || [],
+      blocked_by: r.blocked_by || [],
+      next_step: r.next_step || null,
+      summary_text: r.summary_text || null,
+      version: r.version || 1,
+      updated_at: new Date(r.updated_at).getTime(),
+    };
   },
 };
 

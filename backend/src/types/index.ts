@@ -221,3 +221,16 @@ export interface TaskListItem {
 }
 
 export interface TaskDetail extends Task {}
+
+export interface TaskSummary {
+  task_id: string;
+  summary_id: string;
+  goal: string | null;
+  confirmed_facts: string[];
+  completed_steps: string[];
+  blocked_by: string[];
+  next_step: string | null;
+  summary_text: string | null;
+  version: number;
+  updated_at: number;
+}

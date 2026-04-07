@@ -17,6 +17,23 @@ taskRouter.get("/all", async (c) => {
   }
 });
 
+// GET /v1/tasks/:task_id/summary — must be registered before /:task_id
+taskRouter.get("/:task_id/summary", async (c) => {
+  const taskId = c.req.param("task_id");
+  try {
+    // First check if task exists
+    const task = await TaskRepo.getById(taskId);
+    if (!task) return c.json({ error: `Task not found: ${taskId}` }, 404);
+
+    const summary = await TaskRepo.getSummary(taskId);
+    if (!summary) return c.json({ error: `Summary not found for task: ${taskId}` }, 404);
+    return c.json({ summary });
+  } catch (error: any) {
+    console.error("Task summary error:", error);
+    return c.json({ error: error.message }, 500);
+  }
+});
+
 // GET /v1/tasks/:task_id — get task detail
 taskRouter.get("/:task_id", async (c) => {
   const taskId = c.req.param("task_id");

@@ -116,3 +116,20 @@ CREATE TABLE IF NOT EXISTS tasks (
 CREATE INDEX IF NOT EXISTS idx_tasks_user_session ON tasks(user_id, session_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_updated ON tasks(user_id, updated_at DESC);
+
+-- Task summaries (FC-002)
+CREATE TABLE IF NOT EXISTS task_summaries (
+  id              VARCHAR(36) PRIMARY KEY,
+  task_id         VARCHAR(36) NOT NULL UNIQUE REFERENCES tasks(id) ON DELETE CASCADE,
+  goal            TEXT,
+  confirmed_facts TEXT[] DEFAULT '{}',
+  completed_steps TEXT[] DEFAULT '{}',
+  blocked_by      TEXT[] DEFAULT '{}',
+  next_step       TEXT,
+  summary_text    TEXT,
+  version         INTEGER DEFAULT 1,
+  created_at      TIMESTAMPTZ DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ts_task ON task_summaries(task_id);
