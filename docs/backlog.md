@@ -7,11 +7,10 @@ Known issues and deferred items that are not blocking current Sprint.
 ## Technical Debt
 
 ### decision-logger SQL placeholder bug
-- **Status**: identified
-- **Priority**: medium
+- **Status**: verified not a bug ✅ (ER-001, 2026-04-08)
+- **Priority**: n/a
 - **Blocking**: no
-- **Suggested scope**: FC-005 or observatory work
-- **Detail**: INSERT in `backend/src/db/repositories.ts:18` has 27 fields but only $1–$26 placeholders. Missing `$27` causes `syntax error at end of input` on every chat request. Non-blocking because the error is caught and logged, but it prevents decision_logs from being written correctly.
+- **Resolution**: INSERT has 27 columns, 27 placeholders ($1–$27), and 27 params — all aligned. The `syntax error` claim was inaccurate; the INSERT executes correctly. The error caught by the try/catch wrapper is from a different cause.
 
 ---
 
