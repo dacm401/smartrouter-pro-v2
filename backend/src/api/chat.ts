@@ -108,6 +108,20 @@ chatRouter.post("/chat", async (c) => {
     // 更新任务执行统计
     TaskRepo.updateExecution(taskId, modelResponse.input_tokens + modelResponse.output_tokens).catch((e) => console.error("Failed to update task:", e));
 
+    // 写 trace：classification + response
+    TaskRepo.createTrace({
+      id: uuid(), task_id: taskId, type: "classification",
+      detail: { intent: features.intent, complexity_score: features.complexity_score, mode },
+    }).catch((e) => console.error("Failed to write classification trace:", e));
+    TaskRepo.createTrace({
+      id: uuid(), task_id: taskId, type: "routing",
+      detail: { selected_model: routing.selected_model, selected_role: routing.selected_role, confidence: routing.confidence, did_fallback: didFallback },
+    }).catch((e) => console.error("Failed to write routing trace:", e));
+    TaskRepo.createTrace({
+      id: uuid(), task_id: taskId, type: "response",
+      detail: { input_tokens: modelResponse.input_tokens, output_tokens: modelResponse.output_tokens, latency_ms: latencyMs, total_cost_usd: totalCost },
+    }).catch((e) => console.error("Failed to write response trace:", e));
+
     const response: ChatResponse = {
       message: modelResponse.content,
       decision: { ...decision, execution: { ...decision.execution, response_text: "" } },

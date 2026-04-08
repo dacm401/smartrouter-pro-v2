@@ -234,3 +234,13 @@ export interface TaskSummary {
   version: number;
   updated_at: number;
 }
+
+export type TraceType = "classification" | "routing" | "response" | "tool_call" | "error";
+
+export interface TaskTrace {
+  trace_id: string;
+  task_id: string;
+  type: TraceType;
+  detail: Record<string, any> | null;
+  created_at: number;
+}

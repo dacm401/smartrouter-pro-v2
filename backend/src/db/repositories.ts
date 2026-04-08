@@ -1,6 +1,6 @@
 import { v4 as uuid } from "uuid";
 import { query } from "./connection.js";
-import type { DecisionRecord, BehavioralMemory, IdentityMemory, GrowthProfile, Task, TaskListItem, TaskSummary } from "../types/index.js";
+import type { DecisionRecord, BehavioralMemory, IdentityMemory, GrowthProfile, Task, TaskListItem, TaskSummary, TaskTrace } from "../types/index.js";
 import { GROWTH_LEVELS } from "../config.js";
 
 export const DecisionRepo = {
@@ -220,6 +220,37 @@ export const TaskRepo = {
       version: r.version || 1,
       updated_at: new Date(r.updated_at).getTime(),
     };
+  },
+
+  async getTraces(taskId: string): Promise<TaskTrace[]> {
+    const result = await query(
+      `SELECT * FROM task_traces WHERE task_id=$1 ORDER BY created_at ASC`,
+      [taskId]
+    );
+    return result.rows.map((r: any) => {
+      let detail: Record<string, any> | null = null;
+      if (r.detail) {
+        try {
+          detail = typeof r.detail === "string" ? JSON.parse(r.detail) : r.detail;
+        } catch {
+          detail = { raw: r.detail };
+        }
+      }
+      return {
+        trace_id: r.id,
+        task_id: r.task_id,
+        type: r.type,
+        detail,
+        created_at: new Date(r.created_at).getTime(),
+      };
+    });
+  },
+
+  async createTrace(data: { id: string; task_id: string; type: string; detail?: Record<string, any> | null }): Promise<void> {
+    await query(
+      `INSERT INTO task_traces (id, task_id, type, detail) VALUES ($1, $2, $3, $4)`,
+      [data.id, data.task_id, data.type, data.detail ? JSON.stringify(data.detail) : null]
+    );
   },
 };
 

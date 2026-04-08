@@ -22,7 +22,7 @@ Extract prompt construction from ChatService into a dedicated PromptAssembler mo
 - prompt input type
 - prompt output type
 - ChatService integration
-- no behavior regression for existing /v1/chat
+- no behavior regression for existing POST /api/chat
 
 ---
 
@@ -62,7 +62,7 @@ Extract prompt construction from ChatService into a dedicated PromptAssembler mo
 
 ## Test Steps
 
-1. send a direct-style chat request
+1. send a direct-style chat request via POST /api/chat
 2. verify response still works
 3. send a research-style chat request
 4. verify research mode still works

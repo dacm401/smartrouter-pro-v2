@@ -133,3 +133,14 @@ CREATE TABLE IF NOT EXISTS task_summaries (
 );
 
 CREATE INDEX IF NOT EXISTS idx_ts_task ON task_summaries(task_id);
+
+-- Task traces (FC-003)
+CREATE TABLE IF NOT EXISTS task_traces (
+  id        VARCHAR(36) PRIMARY KEY,
+  task_id   VARCHAR(36) NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  type      VARCHAR(30) NOT NULL,
+  detail    TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_tt_task ON task_traces(task_id, created_at);

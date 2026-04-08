@@ -34,6 +34,21 @@ taskRouter.get("/:task_id/summary", async (c) => {
   }
 });
 
+// GET /v1/tasks/:task_id/traces — must be registered before /:task_id
+taskRouter.get("/:task_id/traces", async (c) => {
+  const taskId = c.req.param("task_id");
+  try {
+    const task = await TaskRepo.getById(taskId);
+    if (!task) return c.json({ error: `Task not found: ${taskId}` }, 404);
+
+    const traces = await TaskRepo.getTraces(taskId);
+    return c.json({ task_id: taskId, traces });
+  } catch (error: any) {
+    console.error("Task traces error:", error);
+    return c.json({ error: error.message }, 500);
+  }
+});
+
 // GET /v1/tasks/:task_id — get task detail
 taskRouter.get("/:task_id", async (c) => {
   const taskId = c.req.param("task_id");

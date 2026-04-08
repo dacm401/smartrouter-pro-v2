@@ -52,7 +52,7 @@ Implement an API to fetch trace records for a task.
 
 ## Test Steps
 
-1. create a task via POST /v1/chat
+1. create a task via POST /api/chat
 2. call GET /v1/tasks/:task_id/traces
 3. verify classification and response traces exist if they were created
 4. verify detail field is returned in usable structure

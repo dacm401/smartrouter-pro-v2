@@ -62,7 +62,7 @@ Implement an API to fetch structured task summary for a given task.
 
 ## Test Steps
 
-1. create a task via POST /v1/chat
+1. create a task via POST /api/chat
 2. call GET /v1/tasks/:task_id/summary
 3. verify summary fields are returned
 4. test with a task that has no summary if possible

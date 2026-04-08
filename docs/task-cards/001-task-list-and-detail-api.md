@@ -66,7 +66,7 @@ Implement task list and task detail APIs so the frontend and debugging workflow 
 - task list endpoint returns tasks in a stable structure
 - task detail endpoint returns a single task by id
 - missing task returns structured error
-- implementation does not break existing POST /v1/chat
+- implementation does not break existing POST /api/chat
 - code follows existing Fastify + Prisma structure
 
 ---
@@ -83,7 +83,7 @@ Implement task list and task detail APIs so the frontend and debugging workflow 
 
 ## Test Steps
 
-1. create one or more tasks via POST /v1/chat
+1. create one or more tasks via POST /api/chat
 2. call GET /v1/tasks
 3. verify tasks appear
 4. call GET /v1/tasks/:task_id
