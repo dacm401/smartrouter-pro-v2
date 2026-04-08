@@ -89,7 +89,7 @@ Make memory injection smarter by introducing lightweight relevance-based retriev
 | Task Card | Status | Notes |
 |---|---|---|
 | MR-001 Memory Retrieval Policy | ✅ Done | commit `4893585` |
-| MR-002 Category-Aware Injection | Pending | |
+| MR-002 Category-Aware Injection | ✅ Done | commit `01c9075` |
 | MR-003 Relevance Ranking for Chat Context | Pending | |
 | MR-004 Review + Guardrails | Pending |
 
