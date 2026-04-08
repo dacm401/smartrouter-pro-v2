@@ -42,6 +42,17 @@ export const config = {
     },
   },
 
+  // RR-001: Execution Result Retrieval and Injection
+  executionResult: {
+    enabled: process.env.EXECUTION_RESULT_INJECTION_ENABLED !== "false",
+    maxResults: parseInt(process.env.EXECUTION_RESULT_MAX_RESULTS || "3"),
+    maxTokensPerResult: parseInt(process.env.EXECUTION_RESULT_MAX_TOKENS || "200"),
+    // Only inject results that terminated in these reasons (completed / step_cap / tool_cap / no_progress)
+    allowedReasons: (process.env.EXECUTION_RESULT_ALLOWED_REASONS
+      ? process.env.EXECUTION_RESULT_ALLOWED_REASONS.split(",")
+      : ["completed"]),
+  },
+
   // EL-004: External tool guardrail
   guardrail: {
     // Hosts permitted for http_request tool. Empty = all hosts blocked (fail-safe).

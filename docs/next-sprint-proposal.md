@@ -1,14 +1,14 @@
 # Next Sprint Proposal
 
-> **Status:** Sprint 07 proposal below. Sprint 06 (Testing and Observability) completed 2026-04-08. Full suite: 84 tests.
+> **Status:** Sprint 08 proposal below. Sprint 07 (Execution Result Memory Persistence) completed 2026-04-08.
 
 ---
 
 ## Recommended Sprint Name
-**Execution Result Memory Persistence**
+**Execution Result Retrieval and Injection**
 
 ## Recommended Goal
-Close the loop between execution output and memory: execution results are stored as persistent records and available to future planning calls. Fix the decision-logger SQL placeholder bug in the same sprint.
+Retrieve recent execution results from `execution_results` and inject them as contextual context before the planner generates a plan. Completes the memory loop: execution results inform future planning.
 
 ---
 

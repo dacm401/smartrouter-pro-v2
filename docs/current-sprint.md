@@ -1,6 +1,6 @@
 # Current Sprint
 
-**Sprint 07 — Execution Result Memory Persistence**
+**Sprint 08 — Execution Result Retrieval and Injection**
 **Status:** ✅ Completed — 2026-04-08
 
 ---
@@ -9,23 +9,29 @@
 
 | Task Card | Description | Status | Commit |
 |---|---|---|---|
-| ER-001 | Decision-Logger SQL Verification | ✅ Done | `cfccdb7` |
-| ER-002 | execution_results Table + Repo | ✅ Done | `cfccdb7` |
-| ER-003 | Execution Result Write Path | ✅ Done | `cfccdb7` |
-| ER-004 | Review + Documentation | ✅ Done | `cfccdb7` |
+| RR-001 | Execution Result Injection Config | ✅ Done | — |
+| RR-002 | Execution Result Formatter Service | ✅ Done | — |
+| RR-003 | chat.ts — Retrieve and Inject Before Planning | ✅ Done | — |
+| RR-004 | Policy Controls + Kill Switches | ✅ Done | — |
 
 ---
 
-## Sprint 07 Summary
+## Sprint 08 Summary
 
-- `execution_results` table: JSONB `steps_summary`, TEXT[] `memory_entries_used`, indexed by user_id and task_id
-- `ExecutionResultRepo.save()` — persists loop result after execution on non-error terminations (completed / step_cap / tool_cap / no_progress)
-- Memory retrieval added to execute branch — `memoryEntriesUsed[]` tracked and written
-- Fire-and-forget persistence — never blocks HTTP response
-- Backlog item verified not a bug: DecisionRepo INSERT is 27/27/27 aligned
-- Review doc: `docs/task-cards/er-001-003-execution-result-persistence-review.md`
+- `config.executionResult` block: `enabled`, `maxResults`, `maxTokensPerResult`, `allowedReasons`
+- `ExecutionResultFormatter.formatExecutionResultsForPlanner()` — pure transform, 17 tests
+- chat.ts: `ExecutionResultRepo.listByUser()` → filter by allowedReasons → format → inject as system message
+- `taskPlanner.plan(executionResultContext)` — optional param, planner unchanged for empty context
+- Kill switch: `EXECUTION_RESULT_INJECTION_ENABLED=false`; graceful degradation on all error paths
+- `runtime-flow.md` updated; `repo-map.md` updated
 
-**84 tests pass — no regression.**
+**101 tests pass — no regression.**
+
+---
+
+## Sprint 07 — Completed and Closed ✅
+
+See `docs/sprint-07-review.md`
 
 ---
 

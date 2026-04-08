@@ -16,6 +16,7 @@ import { assemblePrompt } from "../services/prompt-assembler.js";
 import type { PromptMode } from "../services/prompt-assembler.js";
 import { MemoryEntryRepo, ExecutionResultRepo } from "../db/repositories.js";
 import { runRetrievalPipeline, buildCategoryAwareMemoryText } from "../services/memory-retrieval.js";
+import { formatExecutionResultsForPlanner } from "../services/execution-result-formatter.js";
 // EL-003: Execution Loop
 import { taskPlanner } from "../services/task-planner.js";
 import { executionLoop } from "../services/execution-loop.js";
@@ -87,6 +88,26 @@ chatRouter.post("/chat", async (c) => {
         memoryEntriesUsed = mems.map((m) => m.id);
       }
 
+      // RR-003: Retrieve recent execution results for planner context
+      let executionResultContext = "";
+      if (config.executionResult.enabled) {
+        try {
+          const recentResults = await ExecutionResultRepo.listByUser(
+            userId,
+            config.executionResult.maxResults
+          );
+          const filtered = recentResults.filter((r) =>
+            config.executionResult.allowedReasons.includes(r.reason ?? "")
+          );
+          executionResultContext = formatExecutionResultsForPlanner(
+            filtered,
+            config.executionResult.maxTokensPerResult * 4 // rough char budget (4 chars/token)
+          );
+        } catch (e) {
+          console.warn("[chat] Failed to retrieve execution results for planning:", e);
+        }
+      }
+
       // Step 1: Planning — decompose goal into an ordered ExecutionPlan
       const plan = await taskPlanner.plan({
         taskId,
@@ -94,6 +115,7 @@ chatRouter.post("/chat", async (c) => {
         userId,
         sessionId,
         model: effectiveSlowModel,
+        executionResultContext,
       });
 
       // Step 2: Execute — run the plan step by step

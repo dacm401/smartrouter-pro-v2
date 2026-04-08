@@ -108,11 +108,16 @@ export class TaskPlanner {
     userId: string;
     sessionId: string;
     model?: string;
+    /** Optional execution result context to inform the planner (RR-003) */
+    executionResultContext?: string;
   }): Promise<ExecutionPlan> {
-    const { taskId, goal, userId, sessionId, model = DEFAULT_PLANNER_MODEL } = params;
+    const { taskId, goal, userId, sessionId, model = DEFAULT_PLANNER_MODEL, executionResultContext } = params;
 
     const messages: ChatMessage[] = [
       { role: "system", content: PLANNER_SYSTEM_PROMPT },
+      ...(executionResultContext
+        ? [{ role: "system" as const, content: executionResultContext }]
+        : []),
       {
         role: "user",
         content: `Goal: ${goal}\n\nAvailable tools:\n${toolRegistry.listTools().map((t) => `- ${t.name}: ${t.description}`).join("\n")}`,

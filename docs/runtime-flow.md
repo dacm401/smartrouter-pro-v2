@@ -1,7 +1,7 @@
 # Runtime Flow
 
 > **Scope:** Backend only. Documents the actual runtime path of a request through the system.
-> **Last verified:** Sprint 04 MR-004
+> **Last verified:** Sprint 08 RR-001~RR-004
 > **Principal entrypoint:** `POST /api/chat`
 
 ---
@@ -28,6 +28,19 @@ HTTP POST /api/chat
   │     ├── ⑪ task execution update  (fire-and-forget)
   │     ├── ⑫ trace writes  (classification / routing / response, all fire-and-forget)
   │     └── ⑬ return ChatResponse
+  │
+  │  (execute mode — when body.execute === true)
+  │     ├── ④b memory injection  (same as above)
+  │     ├── ④c execution result retrieval  ← Sprint 08 RR-003
+  │     │      ExecutionResultRepo.listByUser() → formatExecutionResultsForPlanner()
+  │     │      → executionResultContext → taskPlanner.plan(executionResultContext)
+  │     ├── ④d prompt assembly  (PromptAssembler, receives taskSummary)
+  │     ├── ④e taskPlanner.plan()  (with optional executionResultContext)
+  │     ├── ④f executionLoop.run()  (EL-003)
+  │     ├── ④g trace writes  (planning + execution traces)
+  │     ├── ④h execution result persistence  ← Sprint 07 ER-003
+  │     │      ExecutionResultRepo.save() — fire-and-forget, non-blocking
+  │     └── ④i return ChatResponse
   │
   └── /v1/tasks/* routes (independent, read-only relative to a chat session)
         GET /v1/tasks/all
