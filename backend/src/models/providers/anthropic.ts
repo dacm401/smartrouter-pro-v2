@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { ChatMessage } from "../../types/index.js";
-import type { ModelProvider, ModelResponse } from "./base-provider.js";
+import type { ModelProvider, ModelResponse, ToolParam } from "./base-provider.js";
 import { config } from "../../config.js";
 
 const client = new Anthropic({ apiKey: config.anthropicApiKey });
@@ -8,7 +8,13 @@ const client = new Anthropic({ apiKey: config.anthropicApiKey });
 export const anthropicProvider: ModelProvider = {
   name: "anthropic",
   supports(model: string): boolean { return model.startsWith("claude-"); },
-  async chat(model: string, messages: ChatMessage[]): Promise<ModelResponse> {
+  async chat(
+    model: string,
+    messages: ChatMessage[],
+    _tools?: ToolParam[]
+  ): Promise<ModelResponse> {
+    // Tool support for Claude (tool_use) is a future enhancement.
+    // EL-002 planner uses OpenAI-style Function Calling via callModelWithTools.
     const systemMsg = messages.find((m) => m.role === "system");
     const nonSystemMsgs = messages.filter((m) => m.role !== "system");
     const response = await client.messages.create({
