@@ -86,3 +86,15 @@ At the end of this sprint:
 - the repository is easier to navigate
 - runtime boundaries are clearer
 - future Memory v1 work can be added with less ambiguity
+
+---
+
+## Sprint Progress
+
+| Task Card | Status |
+|---|---|
+| TC-005 Repo Structure Audit + First Cleanup | ✅ Done |
+| TC-006 Prompt / Runtime Module Cleanup | ✅ Done |
+| TC-007 API Consistency and Time Format | Pending |
+| TC-008 Runtime Flow Documentation | Pending |
+
