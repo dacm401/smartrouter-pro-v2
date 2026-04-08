@@ -96,9 +96,13 @@ export interface DecisionRecord {
 }
 
 export interface ChatMessage {
-  role: "system" | "user" | "assistant";
+  role: "system" | "user" | "assistant" | "tool";
   content: string;
   metadata?: { tokens?: number; compressed?: boolean; original_content?: string };
+  /** Tool calls emitted by the model (assistant messages with Function Calling) */
+  tool_calls?: ToolCall[];
+  /** ID of the tool call this message is responding to (tool messages only) */
+  tool_call_id?: string;
 }
 
 export interface ChatRequest {
@@ -111,6 +115,8 @@ export interface ChatRequest {
   api_key?: string;
   fast_model?: string;
   slow_model?: string;
+  /** EL-003: If true, route this request through TaskPlanner + ExecutionLoop (multi-step execution). */
+  execute?: boolean;
 }
 
 export interface ChatResponse {

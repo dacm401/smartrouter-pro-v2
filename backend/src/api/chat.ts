@@ -16,6 +16,9 @@ import { assemblePrompt } from "../services/prompt-assembler.js";
 import type { PromptMode } from "../services/prompt-assembler.js";
 import { MemoryEntryRepo } from "../db/repositories.js";
 import { runRetrievalPipeline, buildCategoryAwareMemoryText } from "../services/memory-retrieval.js";
+// EL-003: Execution Loop
+import { taskPlanner } from "../services/task-planner.js";
+import { executionLoop } from "../services/execution-loop.js";
 
 const chatRouter = new Hono();
 
@@ -52,6 +55,71 @@ chatRouter.post("/chat", async (c) => {
       routing.selected_model = routing.selected_role === "fast" ? effectiveFastModel : effectiveSlowModel;
       routing.fallback_model = routing.selected_role === "fast" ? effectiveSlowModel : effectiveFastModel;
     }
+
+    // ── EL-003: Execution mode ───────────────────────────────────────────────
+    // Triggered when the client sets body.execute === true.
+    // Routes the request through TaskPlanner + ExecutionLoop instead of
+    // the single-call model path. Existing logic is entirely unchanged when
+    // body.execute is absent or false.
+    if (body.execute === true) {
+      const taskId = uuid();
+      const title = body.message.substring(0, 100);
+
+      // Create task record
+      await TaskRepo.create({
+        id: taskId,
+        user_id: userId,
+        session_id: sessionId,
+        title,
+        mode: "execute",
+        complexity: "medium",
+        risk: "low",
+        goal: title,
+      }).catch((e) => console.error("Failed to create execute task:", e));
+
+      // Step 1: Planning — decompose goal into an ordered ExecutionPlan
+      const plan = await taskPlanner.plan({
+        taskId,
+        goal: body.message,
+        userId,
+        sessionId,
+        model: effectiveSlowModel,
+      });
+
+      // Step 2: Execute — run the plan step by step
+      const loopResult = await executionLoop.run(plan, {
+        taskId,
+        userId,
+        sessionId,
+        model: effectiveSlowModel,
+        maxSteps: 10,
+        maxToolCalls: 20,
+      });
+
+      // Log the planning trace (loop already wrote step traces)
+      await TaskRepo.createTrace({
+        id: uuid(),
+        task_id: taskId,
+        type: "planning",
+        detail: {
+          goal: body.message,
+          model: effectiveSlowModel,
+          plan_steps: plan.steps.map((s) => ({ id: s.id, title: s.title, type: s.type })),
+          loop_reason: loopResult.reason,
+          completed_steps: loopResult.completedSteps,
+          tool_calls_executed: loopResult.toolCallsExecuted,
+        },
+      }).catch((e) => console.error("Failed to write planning trace:", e));
+
+      // Update task execution stats (use loop message count as proxy for tokens)
+      await TaskRepo.updateExecution(
+        taskId,
+        loopResult.messages.length * 200, // rough token estimate for now
+      ).catch((e) => console.error("Failed to update task:", e));
+
+      return c.json({ message: loopResult.finalContent });
+    }
+    // ── End EL-003 execution mode ────────────────────────────────────────────
 
     // 创建任务记录（用 intent 作为 mode 推断：simple_qa/chat → direct，其他 → research）
     const taskId = uuid();
