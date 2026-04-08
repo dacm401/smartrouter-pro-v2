@@ -2,7 +2,7 @@
 
 **Task Card:** TA-001 (Sprint 06)
 **Status:** ✅ Done
-**Commit:** pending
+**Commit:** `efada92`
 
 ## What was done
 
