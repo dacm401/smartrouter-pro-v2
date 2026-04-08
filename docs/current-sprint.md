@@ -90,6 +90,6 @@ At the end of this sprint:
 |---|---|
 | MC-001 Memory Data Model + Repository | ✅ Done |
 | MC-002 Memory CRUD APIs | ✅ Done |
-| MC-003 Memory Prompt Injection | Pending |
+| MC-003 Memory Prompt Injection | ✅ Done |
 | MC-004 Review + Guardrails | Pending |
 

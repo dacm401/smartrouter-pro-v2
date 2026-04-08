@@ -20,6 +20,11 @@ export const config = {
   },
   databaseUrl: process.env.DATABASE_URL || "postgresql://postgres:postgres@localhost:5432/smartrouter",
   redisUrl: process.env.REDIS_URL || "redis://localhost:6379",
+  memory: {
+    maxEntriesToInject: 5,
+    maxTokensPerEntry: 150,
+    enabled: process.env.MEMORY_INJECTION_ENABLED !== "false",
+  },
 };
 
 export const MODEL_PRICING: Record<string, ModelPricing> = {

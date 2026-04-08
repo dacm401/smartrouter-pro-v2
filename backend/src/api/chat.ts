@@ -14,6 +14,7 @@ import { TaskRepo } from "../db/repositories.js";
 import type { ChatMessage } from "../types/index.js";
 import { assemblePrompt } from "../services/prompt-assembler.js";
 import type { PromptMode } from "../services/prompt-assembler.js";
+import { MemoryEntryRepo } from "../db/repositories.js";
 
 const chatRouter = new Hono();
 
@@ -70,10 +71,26 @@ chatRouter.post("/chat", async (c) => {
       goal: title,
     }).catch((e) => console.error("Failed to create task:", e));
 
-    // 组装 prompt（PromptAssembler v1）
+    // 组装 prompt（PromptAssembler v1 + Memory Injection MC-003）
+    const memories = config.memory.enabled
+      ? await MemoryEntryRepo.getTopForUser(userId, config.memory.maxEntriesToInject)
+      : [];
+
+    const taskSummary = memories.length > 0
+      ? {
+          goal: "User memories:",
+          summaryText: memories
+            .map((m) => `[${m.category}] ${m.content}`)
+            .join("\n"),
+          nextStep: null,
+        }
+      : undefined;
+
     const promptAssembly = assemblePrompt({
       mode: mode as PromptMode,
       userMessage: body.message,
+      taskSummary,
+      maxTaskSummaryTokens: config.memory.maxEntriesToInject * config.memory.maxTokensPerEntry,
     });
 
     const contextResult = await manageContext(
