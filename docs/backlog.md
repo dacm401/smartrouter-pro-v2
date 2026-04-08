@@ -18,11 +18,10 @@ Known issues and deferred items that are not blocking current Sprint.
 ## Consistency Items
 
 ### Timestamp format alignment
-- **Status**: identified
+- **Status**: resolved ✅ (TC-007, 2026-04-08)
 - **Priority**: low
 - **Blocking**: no
-- **Suggested scope**: post-Sprint cleanup
-- **Detail**: All current APIs return `updated_at` / `created_at` as unix ms integers. Need to decide: stay with unix ms or switch to ISO 8601 strings. Whichever is chosen, it should be consistent across all endpoints. Do not mix formats.
+- **Resolution**: All task-related APIs now return ISO 8601 strings (e.g. `"2026-04-08T02:24:14.782Z"`). Unix milliseconds number format removed from outward API. DB storage unchanged. Other non-task APIs (dashboard) not covered — deferred.
 
 ---
 

@@ -95,6 +95,6 @@ At the end of this sprint:
 |---|---|
 | TC-005 Repo Structure Audit + First Cleanup | ✅ Done |
 | TC-006 Prompt / Runtime Module Cleanup | ✅ Done |
-| TC-007 API Consistency and Time Format | Pending |
+| TC-007 API Consistency and Time Format | ✅ Done |
 | TC-008 Runtime Flow Documentation | Pending |
 

@@ -205,8 +205,8 @@ export interface Task {
   tool_calls_used: number;
   steps_used: number;
   summary_ref: string | null;
-  created_at: number;
-  updated_at: number;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface TaskListItem {
@@ -216,7 +216,7 @@ export interface TaskListItem {
   status: TaskStatus;
   complexity: ComplexityLevel;
   risk: RiskLevel;
-  updated_at: number;
+  updated_at: string;
   session_id: string;
 }
 
@@ -232,7 +232,7 @@ export interface TaskSummary {
   next_step: string | null;
   summary_text: string | null;
   version: number;
-  updated_at: number;
+  updated_at: string;
 }
 
 export type TraceType = "classification" | "routing" | "response" | "tool_call" | "error";
@@ -242,5 +242,5 @@ export interface TaskTrace {
   task_id: string;
   type: TraceType;
   detail: Record<string, any> | null;
-  created_at: number;
+  created_at: string;
 }

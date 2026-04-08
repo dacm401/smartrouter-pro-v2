@@ -47,3 +47,6 @@ Move `context-manager.ts` to `services/`, clarify prompt/runtime module placemen
 - Scope stayed tight: one file move, two import updates, docs sync
 - No behavior change to `/api/chat` — zero regressions confirmed
 - `context/` vs `services/` boundary now reflects the real distinction (utility vs orchestration)
+
+## Regression Notes
+- `GET /v1/tasks/:id/summary` may return `404 "Summary not found"` for newly created tasks that have no summary record yet — this is expected behavior, not a regression. Distinguish between: (a) task not found → 404 with `Task not found`, and (b) task exists but summary not yet generated → 404 with `Summary not found`.

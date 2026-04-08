@@ -150,7 +150,7 @@ export const TaskRepo = {
       status: r.status,
       complexity: r.complexity,
       risk: r.risk,
-      updated_at: new Date(r.updated_at).getTime(),
+      updated_at: new Date(r.updated_at).toISOString(),
       session_id: r.session_id,
     }));
   },
@@ -174,8 +174,8 @@ export const TaskRepo = {
       tool_calls_used: r.tool_calls_used || 0,
       steps_used: r.steps_used || 0,
       summary_ref: r.summary_ref || null,
-      created_at: new Date(r.created_at).getTime(),
-      updated_at: new Date(r.updated_at).getTime(),
+      created_at: new Date(r.created_at).toISOString(),
+      updated_at: new Date(r.updated_at).toISOString(),
     };
   },
 
@@ -218,7 +218,7 @@ export const TaskRepo = {
       next_step: r.next_step || null,
       summary_text: r.summary_text || null,
       version: r.version || 1,
-      updated_at: new Date(r.updated_at).getTime(),
+      updated_at: new Date(r.updated_at).toISOString(),
     };
   },
 
@@ -241,7 +241,7 @@ export const TaskRepo = {
         task_id: r.task_id,
         type: r.type,
         detail,
-        created_at: new Date(r.created_at).getTime(),
+        created_at: new Date(r.created_at).toISOString(),
       };
     });
   },
