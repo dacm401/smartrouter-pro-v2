@@ -11,7 +11,7 @@
 |---|---|---|---|
 | TA-001 | ExecutionLoop Unit Tests | ✅ Done | `efada92` |
 | TA-002 | ToolExecutor Integration Tests | ✅ Done | `6bd20ba` |
-| TA-003 | Guardrail Policy Tests | ⏳ Pending | — |
+| TA-003 | Guardrail Policy Tests | ✅ Done | `ad55e8b` |
 | TA-004 | Execution Trace API | ⏳ Pending | — |
 
 ---
@@ -37,6 +37,19 @@
 - GuardrailRejection propagation: verified distinct from non-guardrail errors
 - Review doc: `docs/task-cards/ta-002-tool-executor-integration-tests-review.md`
 - All 44 Sprint 06 tests pass (TA-001: 20 + TA-002: 24)
+
+---
+
+## TA-003 Summary (commit `ad55e8b`, pushed)
+
+- 21 test cases: all guardrail policy rules covered
+- Pure unit tests — no network, no DB, no fetch mocking
+- `http_request`: empty/invalid URL, non-HTTPS, host allowlist, blocked headers (case-insensitive)
+- `web_search`: empty/whitespace query, >500 chars, max_results cap at 10
+- Unknown tool: fail-closed
+- Trace writes: verified on both allowed and rejected decisions
+- Review doc: `docs/task-cards/ta-003-guardrail-policy-tests-review.md`
+- Full suite: 65 tests pass (TA-001: 20 + TA-002: 24 + TA-003: 21)
 
 ---
 
