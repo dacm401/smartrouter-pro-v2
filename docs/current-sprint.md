@@ -1,7 +1,7 @@
 # Current Sprint
 
-**Sprint 04 — Memory v2: Retrieval and Relevance**
-**Status:** ✅ Completed
+**Sprint 05 — Execution Loop / Tool Actions**
+**Status:** 🟡 Planning (proposal draft)
 
 ---
 
@@ -9,10 +9,24 @@
 
 | Task Card | Status | Notes |
 |---|---|---|
-| MR-001 Memory Retrieval Policy | ✅ Done | commit `4893585` |
-| MR-002 Category-Aware Injection | ✅ Done | commit `01c9075` |
-| MR-003 Relevance Ranking for Chat Context | ✅ Done | commit `6c66797` |
-| MR-004 Review + Guardrails | ✅ Done | commit `6c66797` |
+| EL-001 Tool Definition + Registry | ✅ Done | commit `8d1079d` |
+| EL-002 Task Planner | ✅ Done | commit `e491917` (pending push) |
+| EL-003 Execution Loop | 🔴 Pending | Main value deliverable |
+| EL-004 Tool Guardrails + External API Safety | 🔴 Pending | Security layer |
+
+---
+
+## Proposal
+
+See `docs/sprint-05-proposal.md` for full scope, architecture, and design decisions.
+
+---
+
+## Sprint 04 Summary (completed 2026-04-08)
+
+Memory v2: retrieval strategy + category-aware injection + lexical relevance ranking.
+
+**Sprint 04 commits:** `4893585`, `01c9075`, `6c66797`, `33d4ac7`
 
 ---
 
@@ -35,6 +49,4 @@ Memory v2 upgrades the v1 memory injection system with:
 
 ## Next Sprint
 
-**Sprint 05 proposal:** Execution Loop / Tool Actions
-
-Details: TBD — see `docs/backlog.md` for candidate directions.
+See `docs/sprint-05-proposal.md` — proposal is drafted, pending review.
