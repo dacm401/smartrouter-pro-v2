@@ -12,7 +12,7 @@
 | TA-001 | ExecutionLoop Unit Tests | ✅ Done | `efada92` |
 | TA-002 | ToolExecutor Integration Tests | ✅ Done | `6bd20ba` |
 | TA-003 | Guardrail Policy Tests | ✅ Done | `ad55e8b` |
-| TA-004 | Execution Trace API | ⏳ Pending | — |
+| TA-004 | Execution Trace API | ✅ Done | `62fee5c` |
 
 ---
 
@@ -50,6 +50,18 @@
 - Trace writes: verified on both allowed and rejected decisions
 - Review doc: `docs/task-cards/ta-003-guardrail-policy-tests-review.md`
 - Full suite: 65 tests pass (TA-001: 20 + TA-002: 24 + TA-003: 21)
+
+---
+
+## TA-004 Summary (pending push)
+
+- Enhanced `GET /v1/tasks/:task_id/traces`: `type`/`limit` query filters, `summaries[]` field
+- `backend/src/services/trace-formatter.ts`: NEW — `formatTraceSummary()` for all 11 trace types
+- `backend/tests/services/trace-formatter.test.ts`: NEW — 19 test cases
+- Expanded `TraceType` from 5 to 11 types
+- Review doc: `docs/task-cards/ta-004-execution-trace-api-review.md`
+- **Full suite: 84 tests pass (TA-001: 20 + TA-002: 24 + TA-003: 21 + TA-004: 19)**
+- **Sprint 06: COMPLETE ✅**
 
 ---
 

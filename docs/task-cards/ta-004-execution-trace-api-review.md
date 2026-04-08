@@ -2,7 +2,7 @@
 
 **Task Card:** TA-004 (Sprint 06)
 **Status:** ✅ Done
-**Commit:** pending
+**Commit:** `62fee5c`
 
 ---
 
