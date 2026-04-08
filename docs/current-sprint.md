@@ -18,6 +18,7 @@ Introduce a minimal viable memory mechanism that is readable, writable, editable
 ### Memory APIs
 - POST /v1/memory — create memory entry
 - GET /v1/memory — list memory entries for a user
+- GET /v1/memory/:id — get single entry
 - PUT /v1/memory/:id — update a memory entry
 - DELETE /v1/memory/:id — delete a memory entry
 
@@ -48,7 +49,7 @@ Introduce a minimal viable memory mechanism that is readable, writable, editable
 ## Acceptance Criteria
 
 ### Memory APIs
-- all 4 CRUD endpoints functional and return correct HTTP status codes
+- all 5 CRUD endpoints functional and return correct HTTP status codes
 - request validation in place
 - responses typed and predictable
 
@@ -88,7 +89,7 @@ At the end of this sprint:
 | Task Card | Status |
 |---|---|
 | MC-001 Memory Data Model + Repository | ✅ Done |
-| MC-002 Memory APIs | Pending |
-| MC-003 Prompt Injection | Pending |
+| MC-002 Memory CRUD APIs | ✅ Done |
+| MC-003 Memory Prompt Injection | Pending |
 | MC-004 Review + Guardrails | Pending |
 

@@ -5,6 +5,7 @@ import { config } from "./config.js";
 import { chatRouter } from "./api/chat.js";
 import { dashboardRouter } from "./api/dashboard.js";
 import { taskRouter } from "./api/tasks.js";
+import { memoryRouter } from "./api/memory.js";
 
 const app = new Hono();
 
@@ -13,6 +14,7 @@ app.get("/health", (c) => c.json({ status: "ok", version: "1.0.0" }));
 app.route("/api", chatRouter);
 app.route("/api", dashboardRouter);
 app.route("/v1/tasks", taskRouter);
+app.route("/v1/memory", memoryRouter);
 
 console.log(`
 ╔══════════════════════════════════════════╗
