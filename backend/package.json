@@ -8,7 +8,9 @@
     "start": "node dist/index.js",
     "test": "vitest",
     "test:run": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "test:repos": "npx vitest run --config vitest.repo.config.ts tests/repositories/execution-result-repo.test.ts && npx vitest run --config vitest.repo.config.ts tests/repositories/task-repo.test.ts",
+    "test:repos:watch": "vitest --config vitest.repo.config.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.24.0",

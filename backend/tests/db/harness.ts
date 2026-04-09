@@ -148,6 +148,17 @@ export async function truncateTables(): Promise<void> {
 }
 
 /**
+ * Reset the app pool in-place using connection.ts#resetPool().
+ * Call in beforeEach (after truncateTables) to guarantee a clean connection
+ * state when switching between integration test files that share the same
+ * module-level pool.
+ */
+export async function resetAppPool(): Promise<void> {
+  const { resetPool } = await import("../../src/db/connection.js");
+  await resetPool();
+}
+
+/**
  * Run fn() inside a BEGIN...ROLLBACK transaction on a dedicated client.
  * All writes performed by fn (via the app's query() helper) are rolled back.
  *

@@ -10,6 +10,12 @@ export default defineConfig({
     globals: true,
     environment: "node",
     include: ["tests/**/*.test.ts"],
+    exclude: [
+      // Repo integration tests run in SEPARATE vitest processes (npm run test:repos).
+      // Reason: each repo test file needs its own worker to avoid module-level
+      // pool contamination (connection.ts _pool is shared across files in same worker).
+      "tests/repositories/**",
+    ],
     env: {
       // Override DATABASE_URL before any app module is loaded.
       // The harness connects to smartrouter_test and loads the schema.
