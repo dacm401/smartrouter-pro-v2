@@ -187,17 +187,18 @@ export class TaskPlanner {
       return null;
     }
 
+    // Build steps with empty depends_on first (IDs are not yet known during map)
     const steps: ExecutionStep[] = parsed.steps.map((s, i) => ({
       id: uuid(),
       title: s.title ?? `Step ${i + 1}`,
       type: s.kind === "tool_call" ? "tool_call" : "reasoning",
       tool_name: s.kind === "tool_call" ? s.tool_name : undefined,
-      depends_on: i === 0 ? [] : [steps[i - 1]?.id ?? ""],
+      depends_on: [],
       status: "pending",
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } satisfies ExecutionStep));
 
-    // Fix depends_on now that we have IDs
+    // Wire linear dependency chain now that all IDs are assigned
     for (let i = 1; i < steps.length; i++) {
       steps[i].depends_on = [steps[i - 1].id];
     }
