@@ -10,7 +10,9 @@
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:repos": "npx vitest run --config vitest.repo.config.ts tests/repositories/execution-result-repo.test.ts && npx vitest run --config vitest.repo.config.ts tests/repositories/task-repo.test.ts && npx vitest run --config vitest.repo.config.ts tests/repositories/memory-entry-repo.test.ts",
-    "test:repos:watch": "vitest --config vitest.repo.config.ts"
+    "test:repos:watch": "vitest --config vitest.repo.config.ts",
+    "test:api": "npx vitest run --config vitest.api.config.ts",
+    "test:api:watch": "vitest --config vitest.api.config.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.24.0",
