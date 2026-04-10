@@ -245,3 +245,102 @@ describe("decayMemories()", () => {
     expect(Number(result.rows[0].strength)).toBeGreaterThanOrEqual(0);
   });
 });
+
+// ── getBehavioralMemories() ───────────────────────────────────────────────
+
+describe("getBehavioralMemories()", () => {
+  it("returns all memories for a user with strength > 0.1", async () => {
+    const id1 = await seedBehavioralMemory({ strength: 0.8, trigger_pattern: "high" });
+    const id2 = await seedBehavioralMemory({ strength: 0.5, trigger_pattern: "mid" });
+
+    const result = await MemoryRepo.getBehavioralMemories(USER);
+
+    expect(result).toHaveLength(2);
+    const ids = result.map((r) => r.id);
+    expect(ids).toContain(id1);
+    expect(ids).toContain(id2);
+  });
+
+  it("filters out memories with strength <= 0.1", async () => {
+    // Note: strength=0.1 as REAL equals 0.10000000149011612 in IEEE 754,
+    // which is > NUMERIC 0.1 — so we use 0.09 (clearly below) instead of 0.1.
+    await seedBehavioralMemory({ strength: 0.5, trigger_pattern: "keep" });
+    await seedBehavioralMemory({ strength: 0.09, trigger_pattern: "low_exclude" });
+    await seedBehavioralMemory({ strength: 0.05, trigger_pattern: "very_low_exclude" });
+
+    const result = await MemoryRepo.getBehavioralMemories(USER);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].trigger_pattern).toBe("keep");
+  });
+
+  it("orders results by strength DESC", async () => {
+    await seedBehavioralMemory({ strength: 0.3, trigger_pattern: "low" });
+    await seedBehavioralMemory({ strength: 0.8, trigger_pattern: "high" });
+    await seedBehavioralMemory({ strength: 0.5, trigger_pattern: "mid" });
+
+    const result = await MemoryRepo.getBehavioralMemories(USER);
+
+    expect(result).toHaveLength(3);
+    expect(result[0].trigger_pattern).toBe("high");
+    expect(result[1].trigger_pattern).toBe("mid");
+    expect(result[2].trigger_pattern).toBe("low");
+  });
+
+  it("limits to 50 results", async () => {
+    // Insert 55 rows, only 50 should be returned
+    const ids = await Promise.all(
+      Array.from({ length: 55 }, (_, i) =>
+        seedBehavioralMemory({ strength: 1.0 - i * 0.01 })
+      )
+    );
+
+    const result = await MemoryRepo.getBehavioralMemories(USER);
+
+    expect(result).toHaveLength(50);
+    // Verify a few — should include IDs of highest-strength rows
+    const resultIds = result.map((r) => r.id);
+    expect(resultIds).toContain(ids[0]); // strength = 1.0
+    expect(resultIds).toContain(ids[4]); // strength = 0.96
+    expect(resultIds).not.toContain(ids[50]); // strength = 0.5, past LIMIT
+  });
+
+  it("returns empty array when user has no memories", async () => {
+    const result = await MemoryRepo.getBehavioralMemories(uuid());
+    expect(result).toEqual([]);
+  });
+
+  it("defaults null source_decision_ids to empty array in return object", async () => {
+    const id = await seedBehavioralMemory({ strength: 0.5, source_decision_ids: null as any });
+
+    const result = await MemoryRepo.getBehavioralMemories(USER);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].source_decision_ids).toEqual([]);
+  });
+
+  it("returns correct BehavioralMemory shape with all fields", async () => {
+    const memId = await seedBehavioralMemory({
+      trigger_pattern: "pattern_x",
+      observation: "obs_x",
+      learned_action: "action_x",
+      strength: 0.75,
+      reinforcement_count: 4,
+    });
+
+    const result = await MemoryRepo.getBehavioralMemories(USER);
+
+    expect(result).toHaveLength(1);
+    const r = result[0];
+    expect(r.id).toBe(memId);
+    expect(r.user_id).toBe(USER);
+    expect(r.trigger_pattern).toBe("pattern_x");
+    expect(r.observation).toBe("obs_x");
+    expect(r.learned_action).toBe("action_x");
+    expect(Number(r.strength)).toBeCloseTo(0.75);
+    expect(r.reinforcement_count).toBe(4);
+    expect(typeof r.last_activated).toBe("number"); // milliseconds
+    expect(Array.isArray(r.source_decision_ids)).toBe(true);
+    expect(typeof r.created_at).toBe("number"); // milliseconds
+  });
+});
