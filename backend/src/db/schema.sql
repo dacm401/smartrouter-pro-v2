@@ -35,9 +35,19 @@ CREATE TABLE IF NOT EXISTS decision_logs (
   created_at        TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_dl_user_time ON decision_logs(user_id, created_at);
-CREATE INDEX IF NOT EXISTS idx_dl_intent ON decision_logs(user_id, intent);
-CREATE INDEX IF NOT EXISTS idx_dl_feedback ON decision_logs(user_id, feedback_score) WHERE feedback_score IS NOT NULL;
+CREATE TABLE IF NOT EXISTS feedback_events (
+  id              VARCHAR(36) PRIMARY KEY,
+  decision_id    VARCHAR(36) NOT NULL,
+  user_id        VARCHAR(36) NOT NULL,
+  event_type     VARCHAR(50) NOT NULL,
+  signal_level   SMALLINT NOT NULL,  -- 1=L1(strong), 2=L2(weak), 3=L3(noise)
+  source         VARCHAR(20) NOT NULL, -- 'ui' | 'auto_detect' | 'system'
+  raw_data       JSONB,
+  created_at     TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_feedback_events_user_time ON feedback_events(user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_feedback_events_decision ON feedback_events(decision_id);
 
 CREATE TABLE IF NOT EXISTS execution_results (
   id                  VARCHAR(36) PRIMARY KEY,

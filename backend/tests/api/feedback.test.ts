@@ -1,8 +1,9 @@
 /**
  * P3: POST /chat/feedback API Integration Tests — Sprint 12
+ * P2 (Sprint 14): FeedbackType whitelist + ownership validation added.
  *
  * Validates the /chat/feedback endpoint contract:
- *   POST /chat/feedback  { decision_id, feedback_type }
+ *   POST /chat/feedback  { decision_id, feedback_type, user_id }
  *
  * Infrastructure: tests/db/harness.ts
  *   Setup:  DATABASE_URL → smartrouter_test
@@ -99,26 +100,19 @@ async function seedDecision(overrides: Record<string, unknown> = {}) {
 
 const app = new Hono().route("/chat", chatRouter);
 
-const FEEDBACK_TYPES = [
-  "accepted",
-  "thumbs_up",
-  "thumbs_down",
-  "regenerated",
-  "follow_up_thanks",
-  "follow_up_doubt",
-  "edited",
-] as const;
-
+const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
+const OTHER_USER_ID = "00000000-0000-0000-0000-000000000002";
 const DECISION_ID = "00000000-0000-0000-0000-000000000001";
-const VALID_PAYLOAD = { decision_id: DECISION_ID, feedback_type: "thumbs_up" };
+const VALID_PAYLOAD = { decision_id: DECISION_ID, feedback_type: "thumbs_up", user_id: TEST_USER_ID };
 
 // ── Setup ─────────────────────────────────────────────────────────────────────
 
 beforeEach(async () => {
   await truncateTables();
-  // Seed a decision row using the fixed DECISION_ID so tests can reference it
+  // Seed a decision row using the fixed IDs so tests can reference them
   await seedDecision({
     id: DECISION_ID,
+    user_id: TEST_USER_ID,
     routing_correct: true,
     feedback_score: null,
   });
@@ -140,11 +134,11 @@ describe("POST /chat/feedback — success cases", () => {
 
   it("accepts 'accepted' as feedback_type", async () => {
     const id = randomUUID();
-    await seedDecision({ id, feedback_score: null, routing_correct: null });
+    await seedDecision({ id, user_id: TEST_USER_ID, feedback_score: null, routing_correct: null });
     const res = await app.request("/chat/feedback", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ decision_id: id, feedback_type: "accepted" }),
+      body: JSON.stringify({ decision_id: id, feedback_type: "accepted", user_id: TEST_USER_ID }),
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ success: true });
@@ -152,11 +146,11 @@ describe("POST /chat/feedback — success cases", () => {
 
   it("accepts 'thumbs_up' as feedback_type", async () => {
     const id = randomUUID();
-    await seedDecision({ id, feedback_score: null, routing_correct: null });
+    await seedDecision({ id, user_id: TEST_USER_ID, feedback_score: null, routing_correct: null });
     const res = await app.request("/chat/feedback", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ decision_id: id, feedback_type: "thumbs_up" }),
+      body: JSON.stringify({ decision_id: id, feedback_type: "thumbs_up", user_id: TEST_USER_ID }),
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ success: true });
@@ -164,11 +158,11 @@ describe("POST /chat/feedback — success cases", () => {
 
   it("accepts 'thumbs_down' as feedback_type", async () => {
     const id = randomUUID();
-    await seedDecision({ id, feedback_score: null, routing_correct: null });
+    await seedDecision({ id, user_id: TEST_USER_ID, feedback_score: null, routing_correct: null });
     const res = await app.request("/chat/feedback", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ decision_id: id, feedback_type: "thumbs_down" }),
+      body: JSON.stringify({ decision_id: id, feedback_type: "thumbs_down", user_id: TEST_USER_ID }),
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ success: true });
@@ -176,11 +170,11 @@ describe("POST /chat/feedback — success cases", () => {
 
   it("accepts 'regenerated' as feedback_type", async () => {
     const id = randomUUID();
-    await seedDecision({ id, feedback_score: null, routing_correct: null });
+    await seedDecision({ id, user_id: TEST_USER_ID, feedback_score: null, routing_correct: null });
     const res = await app.request("/chat/feedback", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ decision_id: id, feedback_type: "regenerated" }),
+      body: JSON.stringify({ decision_id: id, feedback_type: "regenerated", user_id: TEST_USER_ID }),
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ success: true });
@@ -188,11 +182,11 @@ describe("POST /chat/feedback — success cases", () => {
 
   it("accepts 'follow_up_thanks' as feedback_type", async () => {
     const id = randomUUID();
-    await seedDecision({ id, feedback_score: null, routing_correct: null });
+    await seedDecision({ id, user_id: TEST_USER_ID, feedback_score: null, routing_correct: null });
     const res = await app.request("/chat/feedback", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ decision_id: id, feedback_type: "follow_up_thanks" }),
+      body: JSON.stringify({ decision_id: id, feedback_type: "follow_up_thanks", user_id: TEST_USER_ID }),
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ success: true });
@@ -200,11 +194,11 @@ describe("POST /chat/feedback — success cases", () => {
 
   it("accepts 'follow_up_doubt' as feedback_type", async () => {
     const id = randomUUID();
-    await seedDecision({ id, feedback_score: null, routing_correct: null });
+    await seedDecision({ id, user_id: TEST_USER_ID, feedback_score: null, routing_correct: null });
     const res = await app.request("/chat/feedback", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ decision_id: id, feedback_type: "follow_up_doubt" }),
+      body: JSON.stringify({ decision_id: id, feedback_type: "follow_up_doubt", user_id: TEST_USER_ID }),
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ success: true });
@@ -212,11 +206,11 @@ describe("POST /chat/feedback — success cases", () => {
 
   it("accepts 'edited' as feedback_type", async () => {
     const id = randomUUID();
-    await seedDecision({ id, feedback_score: null, routing_correct: null });
+    await seedDecision({ id, user_id: TEST_USER_ID, feedback_score: null, routing_correct: null });
     const res = await app.request("/chat/feedback", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ decision_id: id, feedback_type: "edited" }),
+      body: JSON.stringify({ decision_id: id, feedback_type: "edited", user_id: TEST_USER_ID }),
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ success: true });
@@ -233,13 +227,12 @@ describe("POST /chat/feedback — decision not found", () => {
       body: JSON.stringify({
         decision_id: "99999999-9999-9999-9999-999999999999",
         feedback_type: "thumbs_up",
+        user_id: TEST_USER_ID,
       }),
     });
-    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(res.status).toBe(404);
     const json = await res.json();
-    // Error contract: { error: string }
     expect(json).toHaveProperty("error");
-    expect(typeof (json as any).error).toBe("string");
   });
 });
 
@@ -250,7 +243,7 @@ describe("POST /chat/feedback — input validation", () => {
     const res = await app.request("/chat/feedback", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ feedback_type: "thumbs_up" }),
+      body: JSON.stringify({ feedback_type: "thumbs_up", user_id: TEST_USER_ID }),
     });
     expect(res.status).toBe(400);
   });
@@ -259,7 +252,16 @@ describe("POST /chat/feedback — input validation", () => {
     const res = await app.request("/chat/feedback", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ decision_id: DECISION_ID }),
+      body: JSON.stringify({ decision_id: DECISION_ID, user_id: TEST_USER_ID }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 400 when user_id is missing", async () => {
+    const res = await app.request("/chat/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision_id: DECISION_ID, feedback_type: "thumbs_up" }),
     });
     expect(res.status).toBe(400);
   });
@@ -268,7 +270,7 @@ describe("POST /chat/feedback — input validation", () => {
     const res = await app.request("/chat/feedback", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ decision_id: "", feedback_type: "thumbs_up" }),
+      body: JSON.stringify({ decision_id: "", feedback_type: "thumbs_up", user_id: TEST_USER_ID }),
     });
     expect(res.status).toBe(400);
   });
@@ -289,5 +291,71 @@ describe("POST /chat/feedback — input validation", () => {
       body: JSON.stringify({}),
     });
     expect(res.status).toBe(400);
+  });
+});
+
+// ── P2: FeedbackType whitelist (Sprint 14) ─────────────────────────────────────
+
+describe("POST /chat/feedback — P2: type whitelist", () => {
+  it("returns 400 for unknown feedback_type", async () => {
+    const res = await app.request("/chat/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision_id: DECISION_ID, feedback_type: "fake_type", user_id: TEST_USER_ID }),
+    });
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect((json as any).error).toContain("invalid feedback_type");
+  });
+
+  it("returns 400 for empty-string feedback_type", async () => {
+    const res = await app.request("/chat/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision_id: DECISION_ID, feedback_type: "", user_id: TEST_USER_ID }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 400 for numerical feedback_type", async () => {
+    const res = await app.request("/chat/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision_id: DECISION_ID, feedback_type: "123", user_id: TEST_USER_ID }),
+    });
+    expect(res.status).toBe(400);
+  });
+});
+
+// ── P2: Ownership validation (Sprint 14) ──────────────────────────────────────
+
+describe("POST /chat/feedback — P2: ownership validation", () => {
+  it("returns 403 when user_id does not match decision owner", async () => {
+    const res = await app.request("/chat/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        decision_id: DECISION_ID,
+        feedback_type: "thumbs_up",
+        user_id: OTHER_USER_ID, // seeded decision belongs to TEST_USER_ID
+      }),
+    });
+    expect(res.status).toBe(403);
+    const json = await res.json();
+    expect((json as any).error).toContain("forbidden");
+  });
+
+  it("succeeds when user_id matches decision owner", async () => {
+    const res = await app.request("/chat/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        decision_id: DECISION_ID,
+        feedback_type: "thumbs_up",
+        user_id: TEST_USER_ID,
+      }),
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ success: true });
   });
 });

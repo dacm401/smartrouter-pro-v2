@@ -56,7 +56,7 @@ export function ChatInterface() {
             </div>
           </div>
         )}
-        {messages.map((msg) => (<MessageBubble key={msg.id} role={msg.role} content={msg.content} decision={msg.decision} />))}
+        {messages.map((msg) => (<MessageBubble key={msg.id} role={msg.role} content={msg.content} decision={msg.decision} userId={USER_ID} />))}
         {showFallbackAnim && <ModelSwitchAnim fromModel={showFallbackAnim.fromModel} toModel={showFallbackAnim.toModel} reason={showFallbackAnim.reason} onDone={() => {}} />}
         {loading && !showFallbackAnim && (
           <div className="flex justify-start mb-4">

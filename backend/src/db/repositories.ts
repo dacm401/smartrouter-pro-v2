@@ -41,6 +41,12 @@ export const DecisionRepo = {
     return result.rows;
   },
 
+  async getById(id: string): Promise<{ id: string; user_id: string } | null> {
+    const result = await query(`SELECT id, user_id FROM decision_logs WHERE id=$1`, [id]);
+    if (result.rows.length === 0) return null;
+    return result.rows[0];
+  },
+
   async getTodayStats(userId: string): Promise<any> {
     const result = await query(
       `SELECT
@@ -87,6 +93,46 @@ export const DecisionRepo = {
     return result.rows
       .filter((r: any) => r.value !== null)
       .map((r: any) => ({ date: r.date.toISOString().split("T")[0], value: Number(r.value) }));
+  },
+};
+
+// ── Feedback Events ───────────────────────────────────────────────────────────
+
+export interface FeedbackEvent {
+  id: string;
+  decision_id: string;
+  user_id: string;
+  event_type: string;
+  signal_level: number;
+  source: "ui" | "auto_detect" | "system";
+  raw_data: Record<string, unknown> | null;
+  created_at: Date;
+}
+
+/** Maps FeedbackType → { signal_level, source } */
+const SIGNAL_CONFIG: Record<string, { signal_level: number; source: "ui" | "auto_detect" | "system" }> = {
+  thumbs_up:        { signal_level: 1, source: "ui" },
+  thumbs_down:      { signal_level: 1, source: "ui" },
+  follow_up_thanks: { signal_level: 2, source: "auto_detect" },
+  follow_up_doubt:  { signal_level: 2, source: "auto_detect" },
+  regenerated:      { signal_level: 3, source: "auto_detect" },
+  edited:           { signal_level: 3, source: "system" },
+  accepted:         { signal_level: 1, source: "system" },
+};
+
+export const FeedbackEventRepo = {
+  async save(event: {
+    decisionId: string;
+    userId: string;
+    eventType: string;
+    rawData?: Record<string, unknown>;
+  }): Promise<void> {
+    const config = SIGNAL_CONFIG[event.eventType] ?? { signal_level: 3, source: "system" as const };
+    await query(
+      `INSERT INTO feedback_events (id, decision_id, user_id, event_type, signal_level, source, raw_data)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [uuid(), event.decisionId, event.userId, event.eventType, config.signal_level, config.source, event.rawData ? JSON.stringify(event.rawData) : null]
+    );
   },
 };
 

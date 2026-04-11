@@ -3,15 +3,15 @@ import { useState } from "react";
 import { DecisionCard } from "./DecisionCard";
 import { sendFeedback } from "@/lib/api";
 
-interface MessageBubbleProps { role: "user" | "assistant"; content: string; decision?: any; }
+interface MessageBubbleProps { role: "user" | "assistant"; content: string; decision?: any; userId?: string; }
 
-export function MessageBubble({ role, content, decision }: MessageBubbleProps) {
+export function MessageBubble({ role, content, decision, userId = "user-001" }: MessageBubbleProps) {
   const isUser = role === "user";
   const [feedbackGiven, setFeedbackGiven] = useState<string | null>(null);
 
   const handleFeedback = async (type: "thumbs_up" | "thumbs_down") => {
     if (decision?.id && !feedbackGiven) {
-      await sendFeedback(decision.id, type);
+      await sendFeedback(decision.id, type, userId);
       setFeedbackGiven(type);
     }
   };

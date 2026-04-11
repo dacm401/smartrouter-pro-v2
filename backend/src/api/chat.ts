@@ -1,6 +1,12 @@
 import { Hono } from "hono";
 import { v4 as uuid } from "uuid";
-import type { ChatRequest, ChatResponse, DecisionRecord, ExecutionStepsSummary } from "../types/index.js";
+import type { ChatRequest, ChatResponse, DecisionRecord, ExecutionStepsSummary, FeedbackType } from "../types/index.js";
+
+const VALID_FEEDBACK_TYPES: readonly FeedbackType[] = [
+  "accepted", "regenerated", "edited",
+  "thumbs_up", "thumbs_down",
+  "follow_up_doubt", "follow_up_thanks",
+] as const;
 import { analyzeAndRoute } from "../router/router.js";
 import { manageContext } from "../services/context-manager.js";
 import { callModelFull } from "../models/model-gateway.js";
@@ -328,23 +334,36 @@ chatRouter.post("/chat", async (c) => {
 chatRouter.post("/feedback", async (c) => {
   let decision_id: string;
   let feedback_type: string;
+  let user_id: string;
   try {
     const body = await c.req.json();
     decision_id = body.decision_id;
     feedback_type = body.feedback_type;
+    user_id = body.user_id;
   } catch {
     return c.json({ error: "invalid JSON body" }, 400);
   }
 
   if (!decision_id) return c.json({ error: "decision_id is required" }, 400);
   if (!feedback_type) return c.json({ error: "feedback_type is required" }, 400);
+  if (!user_id) return c.json({ error: "user_id is required" }, 400);
 
+  // P2-1: Runtime type whitelist validation
+  if (!VALID_FEEDBACK_TYPES.includes(feedback_type as FeedbackType)) {
+    return c.json({ error: `invalid feedback_type '${feedback_type}'` }, 400);
+  }
+
+  // P2-2: Ownership validation
   const { query } = await import("../db/connection.js");
-  const exists = await query(`SELECT id FROM decision_logs WHERE id=$1`, [decision_id]);
-  if (exists.rowCount === 0) return c.json({ error: "decision not found" }, 404);
+  const decision = await query(`SELECT id, user_id FROM decision_logs WHERE id=$1`, [decision_id]);
+  if (decision.rowCount === 0) return c.json({ error: "decision not found" }, 404);
+  if (decision.rows[0].user_id !== user_id) {
+    return c.json({ error: "forbidden: decision does not belong to this user" }, 403);
+  }
 
   const { recordFeedback } = await import("../features/feedback-collector.js");
-  await recordFeedback(decision_id, feedback_type);
+  // P3: also write to feedback_events (userId confirmed via ownership check above)
+  await recordFeedback(decision_id, feedback_type as FeedbackType, user_id);
   return c.json({ success: true });
 });
 

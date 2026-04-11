@@ -1,13 +1,20 @@
 import type { FeedbackType, DecisionRecord } from "../types/index.js";
-import { DecisionRepo } from "../db/repositories.js";
+import { DecisionRepo, FeedbackEventRepo } from "../db/repositories.js";
 
 const FEEDBACK_SCORES: Record<FeedbackType, number> = {
   accepted: 1, thumbs_up: 2, follow_up_thanks: 2, edited: -0.5, regenerated: -2, thumbs_down: -2, follow_up_doubt: -1,
 };
 
-export async function recordFeedback(decisionId: string, feedbackType: FeedbackType): Promise<void> {
+export async function recordFeedback(
+  decisionId: string,
+  feedbackType: FeedbackType,
+  userId?: string,
+): Promise<void> {
   const score = FEEDBACK_SCORES[feedbackType] || 0;
   await DecisionRepo.updateFeedback(decisionId, feedbackType, score);
+  if (userId) {
+    await FeedbackEventRepo.save({ decisionId, userId, eventType: feedbackType });
+  }
 }
 
 export function detectImplicitFeedback(userMessage: string, previousDecisionId: string | null): { type: FeedbackType; confidence: number } | null {
