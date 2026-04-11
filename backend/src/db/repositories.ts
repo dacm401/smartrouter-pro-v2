@@ -1,6 +1,6 @@
 import { v4 as uuid } from "uuid";
 import { query } from "./connection.js";
-import type { DecisionRecord, BehavioralMemory, IdentityMemory, GrowthProfile, Task, TaskListItem, TaskSummary, TaskTrace, MemoryEntry, MemoryEntryInput, MemoryEntryUpdate, ExecutionResultRecord, ExecutionResultInput } from "../types/index.js";
+import type { DecisionRecord, BehavioralMemory, IdentityMemory, GrowthProfile, Task, TaskListItem, TaskSummary, TaskTrace, MemoryEntry, MemoryEntryInput, MemoryEntryUpdate, ExecutionResultRecord, ExecutionResultInput, Evidence, EvidenceInput } from "../types/index.js";
 import { GROWTH_LEVELS } from "../config.js";
 
 export const DecisionRepo = {
@@ -625,3 +625,64 @@ function mapMemoryRow(r: any): MemoryEntry {
     updated_at: new Date(r.updated_at).toISOString(),
   };
 }
+
+// ── Evidence Repository (Layer 6 / E1) ──────────────────────────────────────
+
+function mapEvidenceRow(r: any): Evidence {
+  return {
+    evidence_id: r.evidence_id,
+    task_id: r.task_id,
+    user_id: r.user_id,
+    source: r.source,
+    content: r.content,
+    source_metadata: r.source_metadata ?? null,
+    relevance_score: r.relevance_score ?? null,
+    created_at: new Date(r.created_at).toISOString(),
+  };
+}
+
+export const EvidenceRepo = {
+  async create(input: EvidenceInput): Promise<Evidence> {
+    const id = uuid();
+    const result = await query(
+      `INSERT INTO evidence (evidence_id, task_id, user_id, source, content, source_metadata, relevance_score)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING *`,
+      [
+        id,
+        input.task_id,
+        input.user_id,
+        input.source,
+        input.content,
+        input.source_metadata ? JSON.stringify(input.source_metadata) : null,
+        input.relevance_score ?? null,
+      ]
+    );
+    return mapEvidenceRow(result.rows[0]);
+  },
+
+  async getById(evidenceId: string): Promise<Evidence | null> {
+    const result = await query(
+      `SELECT * FROM evidence WHERE evidence_id=$1`,
+      [evidenceId]
+    );
+    if (result.rows.length === 0) return null;
+    return mapEvidenceRow(result.rows[0]);
+  },
+
+  async listByTask(taskId: string): Promise<Evidence[]> {
+    const result = await query(
+      `SELECT * FROM evidence WHERE task_id=$1 ORDER BY created_at ASC`,
+      [taskId]
+    );
+    return result.rows.map(mapEvidenceRow);
+  },
+
+  async listByUser(userId: string, limit = 100): Promise<Evidence[]> {
+    const result = await query(
+      `SELECT * FROM evidence WHERE user_id=$1 ORDER BY created_at DESC LIMIT $2`,
+      [userId, limit]
+    );
+    return result.rows.map(mapEvidenceRow);
+  },
+};

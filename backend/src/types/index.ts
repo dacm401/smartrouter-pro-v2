@@ -360,6 +360,31 @@ export interface MemoryCategoryPolicy {
   maxCount?: number;
 }
 
+// ── Evidence System (Layer 6 / E1) ─────────────────────────────────────────
+
+/** Source of an evidence record — the retrieval method that produced it */
+export type EvidenceSource = "web_search" | "http_request" | "manual";
+
+export interface Evidence {
+  evidence_id: string;
+  task_id: string;
+  user_id: string;
+  source: EvidenceSource;
+  content: string;
+  source_metadata: Record<string, unknown> | null;
+  relevance_score: number | null;
+  created_at: string;  // ISO 8601 string (outward API)
+}
+
+export interface EvidenceInput {
+  task_id: string;
+  user_id: string;
+  source: EvidenceSource;
+  content: string;
+  source_metadata?: Record<string, unknown>;
+  relevance_score?: number;
+}
+
 // ── Tool System (EL-001) ────────────────────────────────────────────────────
 
 export type ToolScope = "internal" | "external";

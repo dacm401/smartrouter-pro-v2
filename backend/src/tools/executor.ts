@@ -19,6 +19,7 @@ import { v4 as uuid } from "uuid";
 import type { ToolCall, ToolResult } from "../types/index.js";
 import { MemoryEntryRepo } from "../db/repositories.js";
 import { TaskRepo } from "../db/repositories.js";
+import { EvidenceRepo } from "../db/repositories.js";
 import { config } from "../config.js";
 import { toolGuardrail } from "../services/tool-guardrail.js";
 
@@ -311,15 +312,25 @@ export class ToolExecutor {
       throw new GuardrailRejection(guardResult.reason ?? "web_search rejected by guardrail");
     }
 
-    const query = String(args.query ?? "");
+    const queryStr = String(args.query ?? "");
     const maxResults = Math.min(Number(args.max_results ?? 5), 10);
 
     // web_search is stubbed: calls a configured search API endpoint.
     // If no search endpoint is configured, return a helpful stub response.
     const searchEndpoint = process.env.WEB_SEARCH_ENDPOINT;
     if (!searchEndpoint) {
+      // E1: write stub evidence (fire-and-forget; taskId is optional)
+      if (ctx.taskId) {
+        EvidenceRepo.create({
+          task_id: ctx.taskId,
+          user_id: ctx.userId,
+          source: "web_search",
+          content: `[web_search stub] No WEB_SEARCH_ENDPOINT configured. Query: "${queryStr}"`,
+          source_metadata: { query: queryStr, stub: true },
+        }).catch((e) => console.warn("[tool/web_search] Failed to write evidence:", e));
+      }
       return {
-        query,
+        query: queryStr,
         results: [],
         stub: true,
         message: "web_search: No WEB_SEARCH_ENDPOINT configured. Set the environment variable to enable live search.",
@@ -328,7 +339,7 @@ export class ToolExecutor {
 
     // Build search URL (GET with query params)
     const searchUrl = new URL(searchEndpoint);
-    searchUrl.searchParams.set("q", query);
+    searchUrl.searchParams.set("q", queryStr);
     searchUrl.searchParams.set("num", String(maxResults));
 
     const controller = new AbortController();
@@ -353,10 +364,25 @@ export class ToolExecutor {
     }
 
     const data = await response.json();
+    const results = Array.isArray(data.results) ? data.results.slice(0, maxResults) : [];
+
+    // E1: write one evidence record per search result item (fire-and-forget)
+    if (ctx.taskId) {
+      for (const item of results) {
+        EvidenceRepo.create({
+          task_id: ctx.taskId,
+          user_id: ctx.userId,
+          source: "web_search",
+          content: typeof item === "string" ? item : JSON.stringify(item),
+          source_metadata: { query: queryStr, url: item?.url ?? null, title: item?.title ?? null },
+          relevance_score: item?.score ?? item?.relevance ?? null,
+        }).catch((e) => console.warn("[tool/web_search] Failed to write evidence:", e));
+      }
+    }
 
     return {
-      query,
-      results: Array.isArray(data.results) ? data.results.slice(0, maxResults) : [],
+      query: queryStr,
+      results,
       total: Array.isArray(data.results) ? data.results.length : 0,
     };
   }

@@ -189,3 +189,20 @@ CREATE TABLE IF NOT EXISTS memory_entries (
 CREATE INDEX IF NOT EXISTS idx_me_user ON memory_entries(user_id);
 CREATE INDEX IF NOT EXISTS idx_me_user_importance ON memory_entries(user_id, importance DESC, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_me_user_category ON memory_entries(user_id, category);
+
+-- Layer 6 / E1: Evidence table
+-- Stores provenance of external information retrieved during task execution.
+-- Distinct from memory_entries (user-level, editable) — evidence is task-level
+-- and tied to the specific source that produced it (read-only provenance).
+CREATE TABLE IF NOT EXISTS evidence (
+  evidence_id     VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+  task_id         VARCHAR(36) NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  user_id         VARCHAR(36) NOT NULL,
+  source          VARCHAR(50) NOT NULL DEFAULT 'manual',
+  content         TEXT NOT NULL,
+  source_metadata JSONB,
+  relevance_score REAL,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_evidence_task_id ON evidence(task_id);
+CREATE INDEX IF NOT EXISTS idx_evidence_user_id ON evidence(user_id);
