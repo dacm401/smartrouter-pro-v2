@@ -1,8 +1,8 @@
-version: '3.8'
+version: '3.9'
 
 services:
-  db:
-    image: postgres:16-alpine
+  postgres:
+    image: postgres:15-alpine
     environment:
       POSTGRES_DB: smartrouter
       POSTGRES_USER: postgres
@@ -10,33 +10,36 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
       - ./backend/src/db/schema.sql:/docker-entrypoint-initdb.d/schema.sql
-
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   backend:
     build: ./backend
     ports:
       - "3001:3001"
-    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/smartrouter
+      NODE_ENV: production
+      ALLOW_DEV_FALLBACK: "true"
     depends_on:
-      - db
-      - redis
-    volumes:
-      - ./backend/src:/app/src
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
 
   frontend:
     build: ./frontend
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:3001
+      NEXT_PUBLIC_API_URL: http://localhost:3001
     depends_on:
       - backend
 
 volumes:
-  pgdata:
+  postgres_data:
