@@ -1,0 +1,171 @@
+{
+  "summary": {
+    "total": 13,
+    "passed": 0,
+    "failed": 0,
+    "errors": 13,
+    "pass_rate": "0.0%",
+    "total_latency_ms": 75,
+    "avg_latency_ms": 6,
+    "timestamp": "2026-04-11T12:53:37.498Z"
+  },
+  "results": [
+    {
+      "task_id": "direct-rewrite-01",
+      "description": "Rewrite a paragraph in a different style",
+      "prompt_preview": "请把下面这段话改写成更加正式的商务语言：'我们得赶紧把这件事搞定，不然就来不及了。'",
+      "expected_mode": "direct",
+      "actual_mode": null,
+      "actual_role": null,
+      "matched": false,
+      "latency_ms": 41,
+      "tokens_used": 0,
+      "error": "fetch failed"
+    },
+    {
+      "task_id": "direct-summarize-01",
+      "description": "Summarize a short passage",
+      "prompt_preview": "请总结一下这段文字的核心观点：'人工智能的发展经历了三次浪潮。第一次是1950年代的符号主义，第二次是1980年代的专家系统，第三次是2010年代至今的深度学习",
+      "expected_mode": "direct",
+      "actual_mode": null,
+      "actual_role": null,
+      "matched": false,
+      "latency_ms": 4,
+      "tokens_used": 0,
+      "error": "fetch failed"
+    },
+    {
+      "task_id": "direct-concept-01",
+      "description": "Explain a concept concisely",
+      "prompt_preview": "什么是敏捷开发？用三句话解释。",
+      "expected_mode": "direct",
+      "actual_mode": null,
+      "actual_role": null,
+      "matched": false,
+      "latency_ms": 3,
+      "tokens_used": 0,
+      "error": "fetch failed"
+    },
+    {
+      "task_id": "direct-code-01",
+      "description": "Write a simple function",
+      "prompt_preview": "用 Python 写一个函数来判断一个数是否为质数。",
+      "expected_mode": "direct",
+      "actual_mode": null,
+      "actual_role": null,
+      "matched": false,
+      "latency_ms": 3,
+      "tokens_used": 0,
+      "error": "fetch failed"
+    },
+    {
+      "task_id": "direct-translate-01",
+      "description": "Translate a short sentence",
+      "prompt_preview": "把下面这句话翻译成英文：'我今天很高兴能够参加这次会议。'",
+      "expected_mode": "direct",
+      "actual_mode": null,
+      "actual_role": null,
+      "matched": false,
+      "latency_ms": 12,
+      "tokens_used": 0,
+      "error": "fetch failed"
+    },
+    {
+      "task_id": "execute-search-01",
+      "description": "Research and compile information about a topic",
+      "prompt_preview": "帮我搜索并总结一下量子计算在2025年的最新进展，包括主要突破和应用场景",
+      "expected_mode": "execute",
+      "actual_mode": null,
+      "actual_role": null,
+      "matched": false,
+      "latency_ms": 2,
+      "tokens_used": 0,
+      "error": "fetch failed"
+    },
+    {
+      "task_id": "execute-code-01",
+      "description": "Multi-step coding task requiring planning and execution",
+      "prompt_preview": "用 Python 写一个简单的待办事项 CLI 应用，支持添加、查看、删除任务，数据用 JSON 文件持久化",
+      "expected_mode": "execute",
+      "actual_mode": null,
+      "actual_role": null,
+      "matched": false,
+      "latency_ms": 1,
+      "tokens_used": 0,
+      "error": "fetch failed"
+    },
+    {
+      "task_id": "execute-analyze-01",
+      "description": "Analyze a dataset and produce a structured report",
+      "prompt_preview": "搜索 2025 年全球电动汽车销量数据，整理成一份包含品牌排名、市场份额和分析结论的报告",
+      "expected_mode": "execute",
+      "actual_mode": null,
+      "actual_role": null,
+      "matched": false,
+      "latency_ms": 2,
+      "tokens_used": 0,
+      "error": "fetch failed"
+    },
+    {
+      "task_id": "research-analysis-01",
+      "description": "Comparative analysis requiring multi-source research",
+      "prompt_preview": "请对比分析以下三种缓存策略的优缺点：Write-through、Write-back、Write-around。并结合实际应用场景说明各自适合的情况。",
+      "expected_mode": "research",
+      "actual_mode": null,
+      "actual_role": null,
+      "matched": false,
+      "latency_ms": 1,
+      "tokens_used": 0,
+      "error": "fetch failed"
+    },
+    {
+      "task_id": "research-investigation-01",
+      "description": "Investigative research question",
+      "prompt_preview": "分布式系统的 CAP 定理在实践中是如何应用的？请举出 3 个具体的开源项目案例，并分析它们是如何在一致性、可用性、分区容忍性之间做权衡的。",
+      "expected_mode": "research",
+      "actual_mode": null,
+      "actual_role": null,
+      "matched": false,
+      "latency_ms": 2,
+      "tokens_used": 0,
+      "error": "fetch failed"
+    },
+    {
+      "task_id": "research-comparison-01",
+      "description": "Deep comparison of technologies",
+      "prompt_preview": "我正在设计一个高并发的 Web API，请对比分析 REST、GraphQL 和 gRPC 三种 API 设计风格在性能、可维护性、工具生态方面的差异，并给出选",
+      "expected_mode": "research",
+      "actual_mode": null,
+      "actual_role": null,
+      "matched": false,
+      "latency_ms": 1,
+      "tokens_used": 0,
+      "error": "fetch failed"
+    },
+    {
+      "task_id": "research-survey-01",
+      "description": "Survey/investigation across multiple domains",
+      "prompt_preview": "请调研 2023 年以来大语言模型在代码生成领域的主要进展，包括技术突破、评估基准更新、以及代表性开源/商业项目。",
+      "expected_mode": "research",
+      "actual_mode": null,
+      "actual_role": null,
+      "matched": false,
+      "latency_ms": 2,
+      "tokens_used": 0,
+      "error": "fetch failed"
+    },
+    {
+      "task_id": "research-strategy-01",
+      "description": "Strategic planning with multiple factors",
+      "prompt_preview": "我现在负责一个 10 人团队的 AI 产品研发，请从技术选型、团队协作、发布策略、质量保障四个维度，制定一份从零到一的 AI 产品研发计划。",
+      "expected_mode": "research",
+      "actual_mode": null,
+      "actual_role": null,
+      "matched": false,
+      "latency_ms": 1,
+      "tokens_used": 0,
+      "error": "fetch failed"
+    }
+  ],
+  "generated_at": "2026-04-11T12:53:37.498Z"
+}

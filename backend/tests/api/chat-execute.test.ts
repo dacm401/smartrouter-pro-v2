@@ -60,6 +60,10 @@ const mockTaskRepo = vi.hoisted(() => ({
   create: vi.fn().mockResolvedValue(undefined),
   createTrace: vi.fn().mockResolvedValue(undefined),
   updateExecution: vi.fn().mockResolvedValue(undefined),
+  findActiveBySession: vi.fn().mockResolvedValue(null),
+  getById: vi.fn().mockResolvedValue(null),
+  setStatus: vi.fn().mockResolvedValue(undefined),
+  list: vi.fn().mockResolvedValue([]),
 }));
 
 const mockMemoryEntryRepo = vi.hoisted(() => ({
@@ -92,6 +96,7 @@ const mockExecutionResultConfig = {
 };
 
 const mockConfig = {
+  identity: { allowDevFallback: true },
   memory: { enabled: true, maxEntriesToInject: 5 },
   executionResult: mockExecutionResultConfig,
 };
@@ -128,7 +133,19 @@ vi.mock("../../src/services/context-manager.js", () => ({
 }));
 
 vi.mock("../../src/router/quality-gate.js", () => ({
-  checkQuality: vi.fn().mockReturnValue({ passed: true }),
+  checkQuality: vi.fn().mockReturnValue({ passed: true, issues: [] }),
+}));
+
+vi.mock("../../src/logging/decision-logger.js", () => ({
+  logDecision: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("../../src/features/learning-engine.js", () => ({
+  learnFromInteraction: vi.fn().mockResolvedValue({
+    new_memory: null,
+    milestones: [],
+    implicit_feedback: null,
+  }),
 }));
 
 vi.mock("../../src/logging/decision-logger.js", () => ({
@@ -147,20 +164,65 @@ vi.mock("../../src/services/prompt-assembler.js", () => ({
   assemblePrompt: vi.fn().mockReturnValue({
     systemPrompt: "You are a helpful assistant.",
     userMessage: "",
+    format: { role: "user", content: "formatted" },
+  }),
+}));
+
+vi.mock("../../src/services/prompt-assembler.js", () => ({
+  assemblePrompt: vi.fn().mockReturnValue({
+    systemPrompt: "You are a helpful assistant.",
+    userMessage: "",
   }),
 }));
 
 vi.mock("../../src/services/memory-retrieval.js", () => ({
   runRetrievalPipeline: vi.fn().mockReturnValue([]),
-  buildCategoryAwareMemoryText: vi.fn().mockReturnValue({ combined: "" }),
+  buildCategoryAwareMemoryText: vi.fn().mockReturnValue(""),
 }));
 
 // ── Core mocks ────────────────────────────────────────────────────────────────
 
 vi.mock("../../src/db/repositories.js", () => ({
+  DecisionRepo: {
+    save: vi.fn().mockResolvedValue(undefined),
+    getById: vi.fn().mockResolvedValue(null),
+    getRecent: vi.fn().mockResolvedValue([]),
+    updateFeedback: vi.fn().mockResolvedValue(undefined),
+    getTodayStats: vi.fn().mockResolvedValue({
+      total_requests: 0, fast_count: 0, slow_count: 0, fallback_count: 0,
+      total_tokens: 0, total_cost: 0, saved_cost: 0, avg_latency: 0, satisfaction_rate: 0,
+    }),
+    getRoutingAccuracyHistory: vi.fn().mockResolvedValue([]),
+  },
+  FeedbackEventRepo: {
+    save: vi.fn().mockResolvedValue(undefined),
+    getByDecisionIds: vi.fn().mockResolvedValue(new Map()),
+  },
+  MemoryRepo: {
+    getIdentity: vi.fn().mockResolvedValue(null),
+    upsertIdentity: vi.fn().mockResolvedValue(undefined),
+    getBehavioralMemories: vi.fn().mockResolvedValue([]),
+    saveBehavioralMemory: vi.fn().mockResolvedValue(undefined),
+    reinforceMemory: vi.fn().mockResolvedValue(undefined),
+    decayMemories: vi.fn().mockResolvedValue(undefined),
+  },
+  GrowthRepo: {
+    getProfile: vi.fn().mockResolvedValue({
+      user_id: "user-1", level: 1, level_name: "初次见面",
+      level_progress: 0, routing_accuracy: 0, satisfaction_history: [],
+      cost_saving_rate: 0, total_saved_usd: 0, satisfaction_rate: 0,
+      total_interactions: 0, behavioral_memories_count: 0,
+      milestones: [], recent_learnings: [],
+    }),
+    addMilestone: vi.fn().mockResolvedValue(undefined),
+  },
   TaskRepo: mockTaskRepo,
   MemoryEntryRepo: mockMemoryEntryRepo,
   ExecutionResultRepo: mockExecutionResultRepo,
+  EvidenceRepo: {
+    create: vi.fn(), getById: vi.fn(),
+    listByTask: vi.fn().mockResolvedValue([]), listByUser: vi.fn().mockResolvedValue([]),
+  },
 }));
 
 vi.mock("../../src/services/task-planner.js", () => ({

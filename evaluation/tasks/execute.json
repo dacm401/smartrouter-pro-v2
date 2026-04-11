@@ -1,0 +1,23 @@
+[
+  {
+    "id": "execute-search-01",
+    "description": "Research and compile information about a topic",
+    "prompt": "帮我搜索并总结一下量子计算在2025年的最新进展，包括主要突破和应用场景",
+    "expected_mode": "execute",
+    "execute": true
+  },
+  {
+    "id": "execute-code-01",
+    "description": "Multi-step coding task requiring planning and execution",
+    "prompt": "用 Python 写一个简单的待办事项 CLI 应用，支持添加、查看、删除任务，数据用 JSON 文件持久化",
+    "expected_mode": "execute",
+    "execute": true
+  },
+  {
+    "id": "execute-analyze-01",
+    "description": "Analyze a dataset and produce a structured report",
+    "prompt": "搜索 2025 年全球电动汽车销量数据，整理成一份包含品牌排名、市场份额和分析结论的报告",
+    "expected_mode": "execute",
+    "execute": true
+  }
+]

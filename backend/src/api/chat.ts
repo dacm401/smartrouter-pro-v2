@@ -241,11 +241,12 @@ chatRouter.post("/chat", async (c) => {
     // 创建任务记录（用 intent 作为 mode 推断：simple_qa/chat → direct，其他 → research）
     // T1: if we resumed an existing task, reuse its taskId instead of creating a new one
     const taskId = resumedTaskId || uuid();
+    const message = body.message ?? "";
     const intentToMode: Record<string, string> = { simple_qa: "direct", chat: "direct", unknown: "direct" };
     const mode = intentToMode[features.intent] || "research";
     const complexityMap = ["low", "low", "medium", "high"];
     const complexity = complexityMap[Math.min(Math.floor(features.complexity_score / 33), 3)];
-    const title = body.message.substring(0, 100);
+    const title = message.substring(0, 100);
 
     TaskRepo.create({
       id: taskId,
@@ -266,7 +267,7 @@ chatRouter.post("/chat", async (c) => {
     // MR-001: v2 retrieval pipeline — only active when strategy === "v2"
     let retrievalResults: Array<{ entry: any; score: number; reason: string }> = [];
     if (config.memory.enabled && config.memory.retrieval.strategy === "v2") {
-      const context = { userMessage: body.message };
+      const context = { userMessage: message };
       // Fetch a wider candidate pool (1.5× the injection limit) for scoring
       const candidates = await MemoryEntryRepo.getTopForUser(
         userId,
@@ -322,7 +323,7 @@ chatRouter.post("/chat", async (c) => {
 
     const promptAssembly = assemblePrompt({
       mode: mode as PromptMode,
-      userMessage: body.message,
+      userMessage: message,
       taskSummary,
       maxTaskSummaryTokens: config.memory.maxEntriesToInject * config.memory.maxTokensPerEntry,
     });
@@ -375,7 +376,7 @@ chatRouter.post("/chat", async (c) => {
     })();
 
     // P4: userId is available in scope; pass to learnFromInteraction for feedback_events writes
-    learnFromInteraction(decision, body.message, previousDecisionId, userId).catch((e) => console.error("Learning failed:", e));
+    learnFromInteraction(decision, message, previousDecisionId, userId).catch((e) => console.error("Learning failed:", e));
     // 更新任务执行统计
     TaskRepo.updateExecution(taskId, modelResponse.input_tokens + modelResponse.output_tokens).catch((e) => console.error("Failed to update task:", e));
 

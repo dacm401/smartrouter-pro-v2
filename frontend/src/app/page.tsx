@@ -6,6 +6,7 @@ import { SettingsModal } from "@/components/chat/SettingsModal";
 import { TaskPanel } from "@/components/workbench/TaskPanel";
 import { EvidencePanel } from "@/components/workbench/EvidencePanel";
 import { TracePanel } from "@/components/workbench/TracePanel";
+import { HealthPanel } from "@/components/workbench/HealthPanel";
 
 const USER_ID = "user-001";
 
@@ -13,7 +14,7 @@ export default function HomePage() {
   const [showSettings, setShowSettings] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
-  const [workbenchTab, setWorkbenchTab] = useState<"evidence" | "trace">("evidence");
+  const [workbenchTab, setWorkbenchTab] = useState<"evidence" | "trace" | "health">("evidence");
 
   return (
     <div className="flex flex-col h-screen bg-gray-50">
@@ -77,7 +78,7 @@ export default function HomePage() {
                       : "text-gray-500 hover:text-gray-700"
                   }`}
                 >
-                  🗂️ 证据
+                  🗂 证据
                 </button>
                 <button
                   onClick={() => setWorkbenchTab("trace")}
@@ -89,13 +90,25 @@ export default function HomePage() {
                 >
                   📡 轨迹
                 </button>
+                <button
+                  onClick={() => setWorkbenchTab("health")}
+                  className={`flex-1 px-3 py-2 text-xs font-medium transition-colors ${
+                    workbenchTab === "health"
+                      ? "text-blue-600 border-b-2 border-blue-500 bg-white"
+                      : "text-gray-500 hover:text-gray-700"
+                  }`}
+                >
+                  💚 健康
+                </button>
               </div>
               {/* Tab content */}
               <div className="flex-1 overflow-hidden">
                 {workbenchTab === "evidence" ? (
                   <EvidencePanel taskId={selectedTaskId} userId={USER_ID} />
-                ) : (
+                ) : workbenchTab === "trace" ? (
                   <TracePanel taskId={selectedTaskId} userId={USER_ID} />
+                ) : (
+                  <HealthPanel />
                 )}
               </div>
             </div>

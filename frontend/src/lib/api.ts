@@ -116,3 +116,29 @@ export async function fetchTraces(taskId: string, userId: string) {
   if (!res.ok) throw new Error(`加载执行轨迹失败 (${res.status})`);
   return res.json();
 }
+
+// H1: Runtime Health Dashboard
+export interface HealthStatus {
+  status: "ok" | "degraded" | "error";
+  timestamp: string;
+  uptime_seconds: number;
+  version: string;
+  services: {
+    database: { status: "ok" | "error"; latency_ms: number | null };
+    model_router: { status: "ok" | "error"; providers: string[] };
+    web_search: { status: "configured" | "not_configured" };
+  };
+  stats: {
+    tasks_total: number;
+    tasks_active: number;
+    memory_entries: number;
+    evidence_total: number;
+  } | null;
+}
+
+export async function fetchHealth(): Promise<HealthStatus> {
+  const { apiBase } = getApiConfig();
+  const res = await fetch(`${apiBase}/health`);
+  if (!res.ok) throw new Error(`加载健康状态失败 (${res.status})`);
+  return res.json();
+}
