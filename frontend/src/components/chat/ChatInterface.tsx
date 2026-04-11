@@ -26,7 +26,8 @@ export function ChatInterface() {
     setInput("");
     setLoading(true);
     try {
-      const history = messages.map((m) => ({ role: m.role, content: m.content }));
+      // P4: include decision_id so backend can derive previousDecisionId for implicit feedback
+      const history = messages.map((m) => ({ role: m.role, content: m.content, decision_id: m.decision?.id }));
       const data = await sendMessage(text, history, USER_ID, sessionId);
       const replyContent = data.message || "⚠️ 收到空响应，请检查后端日志。";
       if (data.decision?.execution?.did_fallback) {

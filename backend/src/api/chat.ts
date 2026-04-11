@@ -302,7 +302,18 @@ chatRouter.post("/chat", async (c) => {
     };
 
     logDecision(decision).catch((e) => console.error("Failed to log decision:", e));
-    learnFromInteraction(decision, body.message).catch((e) => console.error("Learning failed:", e));
+
+    // P4: derive previousDecisionId from the last assistant message in history
+    const previousDecisionId: string | undefined = (() => {
+      for (let i = body.history.length - 1; i >= 0; i--) {
+        const msg = body.history[i];
+        if (msg.role === "assistant" && msg.decision_id) return msg.decision_id;
+      }
+      return undefined;
+    })();
+
+    // P4: userId is available in scope; pass to learnFromInteraction for feedback_events writes
+    learnFromInteraction(decision, body.message, previousDecisionId, userId).catch((e) => console.error("Learning failed:", e));
     // 更新任务执行统计
     TaskRepo.updateExecution(taskId, modelResponse.input_tokens + modelResponse.output_tokens).catch((e) => console.error("Failed to update task:", e));
 

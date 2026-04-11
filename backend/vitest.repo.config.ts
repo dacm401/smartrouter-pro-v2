@@ -19,7 +19,7 @@ export default defineConfig({
     globals: true,
     environment: "node",
     // Only repo integration tests — runs in its own process.
-    include: ["tests/repositories/**/*.test.ts"],
+    include: ["tests/repositories/**/*.test.ts", "tests/features/**/*.test.ts"],
     // No exclude needed — this is a standalone config.
     env: {
       DATABASE_URL: testDbUrl,

@@ -9,11 +9,12 @@ export async function recordFeedback(
   decisionId: string,
   feedbackType: FeedbackType,
   userId?: string,
+  rawData?: Record<string, unknown>,
 ): Promise<void> {
   const score = FEEDBACK_SCORES[feedbackType] || 0;
   await DecisionRepo.updateFeedback(decisionId, feedbackType, score);
   if (userId) {
-    await FeedbackEventRepo.save({ decisionId, userId, eventType: feedbackType });
+    await FeedbackEventRepo.save({ decisionId, userId, eventType: feedbackType, rawData });
   }
 }
 
@@ -22,6 +23,6 @@ export function detectImplicitFeedback(userMessage: string, previousDecisionId: 
   const msg = userMessage.toLowerCase();
   if (/谢谢|感谢|太好了|很好|完美|exactly|perfect|thanks|great|awesome/i.test(msg)) return { type: "follow_up_thanks", confidence: 0.8 };
   if (/你确定|不对|错了|不是这样|wrong|incorrect|are you sure/i.test(msg)) return { type: "follow_up_doubt", confidence: 0.7 };
-  if (/再说一遍|重新|换个说法|rephrase|try again/i.test(msg)) return { type: "regenerated", confidence: 0.6 };
+  if (/再说一遍|换个说法|换个方式表达|regenerate|rephrase|try again|重新来/i.test(msg)) return { type: "regenerated", confidence: 0.6 };
   return null;
 }

@@ -18,6 +18,9 @@ export default defineConfig({
       // API integration tests run in SEPARATE vitest process (npm run test:api).
       // They use real repos + real DB and must not share a worker with mock tests.
       "tests/api/**",
+      // Feature tests (detectImplicitFeedback / recordFeedback / learnFromInteraction wiring)
+      // run in SEPARATE vitest process (npm run test:repos) with DB isolation.
+      "tests/features/**",
     ],
     env: {
       // Override DATABASE_URL before any app module is loaded.

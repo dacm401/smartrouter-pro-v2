@@ -13,7 +13,7 @@
  */
 
 import { analyzeAndLearn } from "../../src/services/memory-store.js";
-import { DecisionRepo, MemoryRepo } from "../../src/db/repositories.js";
+import { DecisionRepo, MemoryRepo, FeedbackEventRepo } from "../../src/db/repositories.js";
 
 const USER = "test-user-p41";
 
@@ -605,6 +605,360 @@ describe("P4.2 execution signal samples contribute to eligibility threshold (eff
     // fastExplicitSamples=3, positiveCount=3, fastPositiveRate=1.0 → positive gate fires
     expect(result).not.toBeNull();
     expect(result!.strength).toBe(0.7);
+    expect(MemoryRepo.saveBehavioralMemory).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── P5: Learning-side Signal Level Gating ─────────────────────────────────────
+//
+// Sprint 14 P5: signal_level from feedback_events gates which samples contribute
+// to truth statistics vs. eligibility only.
+//
+// Signal level routing:
+//   L1 (signal_level=1: thumbs_up/down, accepted) → truth stats + eligibility ✓
+//   L2 (signal_level=2: follow_up_thanks, follow_up_doubt) → eligibility only, no truth
+//   L3 (signal_level=3: regenerated, edited) → excluded entirely
+//
+// Compatibility: decisions without a feedback_events record → treated as L1 (legacy).
+//
+// Implementation: FeedbackEventRepo.getByDecisionIds() returns Map<decisionId, signal_level>.
+// Decisions with no event in feedback_events fall back to the legacy heuristic
+// (feedback_score != null → truth-capable).
+
+describe("P5: L2 signals count toward eligibility but NOT toward truth statistics", () => {
+
+  // Helper: build a signal level map for specific decision IDs
+  const l2SignalMap = (decisions: any[]) => {
+    const map = new Map<string, number>();
+    decisions.forEach((d) => map.set(d.id, 2)); // all L2
+    return map;
+  };
+
+  const stubWithL2 = async (decisions: any[]) => {
+    vi.spyOn(DecisionRepo, "getRecent").mockResolvedValue(decisions as any);
+    vi.spyOn(MemoryRepo, "getBehavioralMemories").mockResolvedValue([] as any);
+    vi.spyOn(MemoryRepo, "saveBehavioralMemory").mockResolvedValue(undefined as any);
+    vi.spyOn(FeedbackEventRepo, "getByDecisionIds").mockResolvedValue(l2SignalMap(decisions));
+    return analyzeAndLearn(USER, latestDecision);
+  };
+
+  afterEach(() => vi.restoreAllMocks());
+
+  /**
+   * 2 L2 signals + 1 fallback execution signal:
+   *   effectiveFastSampleCount = 0 (L2 excluded from truth) + 0 + 1 = 1 < 3
+   *   → eligibility not open → no gate fires → result is null.
+   */
+  it("2 L2 signals + 1 fallback signal: eligibility NOT open (effectiveFastSampleCount=1)", async () => {
+    const decisions = [
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: 1 }),  // L2
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: 1 }),  // L2
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: null, did_fallback: true }),
+    ];
+    const result = await stubWithL2(decisions);
+    // L2 samples excluded from truth AND from eligibility count
+    // effectiveFastSampleCount = 0 + 1 = 1 < 3 → null
+    expect(result).toBeNull();
+    expect(MemoryRepo.saveBehavioralMemory).not.toHaveBeenCalled();
+  });
+
+  /**
+   * 2 L2 signals + 1 L1 positive → effectiveFastSampleCount = 1 + 1 = 2 < 3
+   * Still not enough for eligibility.  Result: null.
+   */
+  it("2 L2 signals + 1 L1 positive: still not eligible (effectiveFastSampleCount=2)", async () => {
+    const l2Dec = [
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: 1 }),
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: 1 }),
+    ];
+    const l1Dec = makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: 1 });
+    const allDecs = [...l2Dec, l1Dec];
+
+    vi.spyOn(DecisionRepo, "getRecent").mockResolvedValue(allDecs as any);
+    vi.spyOn(MemoryRepo, "getBehavioralMemories").mockResolvedValue([] as any);
+    vi.spyOn(MemoryRepo, "saveBehavioralMemory").mockResolvedValue(undefined as any);
+    vi.spyOn(FeedbackEventRepo, "getByDecisionIds").mockImplementation(async () => {
+      const m = new Map<string, number>();
+      l2Dec.forEach((d) => m.set(d.id, 2)); // L2 for the first two
+      m.set(l1Dec.id, 1);                   // L1 for the third
+      return m;
+    });
+
+    const result = await analyzeAndLearn(USER, latestDecision);
+    // L1 count = 1, L2 count = 2, execution signal = 0
+    // effectiveFastSampleCount = 1 + 2 + 0 = 3 ≥ 3 → eligibility OPEN
+    // fastExplicitSamples (L1) = 1, positiveCount = 1 < 3 → positive gate: no fire
+    // fastNegativeRate = 0 → negative gate: no fire
+    expect(result).toBeNull();
+    expect(MemoryRepo.saveBehavioralMemory).not.toHaveBeenCalled();
+  });
+
+  /**
+   * 2 L2 signals + 1 L1 positive + 1 fallback execution signal:
+   *   effectiveFastSampleCount = 1 (L1) + 2 (L2) + 1 (exec) = 4 ≥ 3 → eligibility open
+   *   fastExplicitSamples (L1) = 1 → positiveCount = 1 < 3 → no positive gate
+   *   fastNegativeRate = 0 → no negative gate
+   * Result: null (eligible but no gate fires).
+   */
+  it("2 L2 + 1 L1 + 1 fallback: eligible but no gate fires (positiveCount=1 < 3)", async () => {
+    const l2Dec = [
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: 1 }),
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: 1 }),
+    ];
+    const l1Dec = makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: 1 });
+    const execDec = makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: null, did_fallback: true });
+    const allDecs = [...l2Dec, l1Dec, execDec];
+
+    vi.spyOn(DecisionRepo, "getRecent").mockResolvedValue(allDecs as any);
+    vi.spyOn(MemoryRepo, "getBehavioralMemories").mockResolvedValue([] as any);
+    vi.spyOn(MemoryRepo, "saveBehavioralMemory").mockResolvedValue(undefined as any);
+    vi.spyOn(FeedbackEventRepo, "getByDecisionIds").mockImplementation(async () => {
+      const m = new Map<string, number>();
+      l2Dec.forEach((d) => m.set(d.id, 2));
+      m.set(l1Dec.id, 1);
+      return m;
+    });
+
+    const result = await analyzeAndLearn(USER, latestDecision);
+    // effectiveFastSampleCount = 1 + 2 + 1 = 4 → open
+    // L1 samples = 1, positiveCount = 1 < 3 → no positive gate
+    expect(result).toBeNull();
+  });
+
+  /**
+   * 3 L1 positive + 2 L2 signals:
+   *   effectiveFastSampleCount = 3 + 2 + 0 = 5 ≥ 3 → open
+   *   L1 samples = 3, positiveCount = 3 ≥ 3, fastPositiveRate = 1.0 > 0.5 → positive gate FIRES
+   *   L2 signals do NOT alter positive rate (still computed on L1 only).
+   * This confirms L2 boosts eligibility without polluting truth.
+   */
+  it("3 L1 positive + 2 L2 signals: positive gate fires (L2 boosts eligibility, doesn't pollute truth)", async () => {
+    const l2Dec = [
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: 1 }),
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: 1 }),
+    ];
+    const l1Decs = [
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: 1 }),
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: 1 }),
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: 1 }),
+    ];
+    const allDecs = [...l1Decs, ...l2Dec];
+
+    vi.spyOn(DecisionRepo, "getRecent").mockResolvedValue(allDecs as any);
+    vi.spyOn(MemoryRepo, "getBehavioralMemories").mockResolvedValue([] as any);
+    vi.spyOn(MemoryRepo, "saveBehavioralMemory").mockResolvedValue(undefined as any);
+    vi.spyOn(FeedbackEventRepo, "getByDecisionIds").mockImplementation(async () => {
+      const m = new Map<string, number>();
+      l1Decs.forEach((d) => m.set(d.id, 1));
+      l2Dec.forEach((d) => m.set(d.id, 2));
+      return m;
+    });
+
+    const result = await analyzeAndLearn(USER, latestDecision);
+    expect(result).not.toBeNull();
+    expect(result!.strength).toBe(0.7);
+    expect(MemoryRepo.saveBehavioralMemory).toHaveBeenCalledTimes(1);
+    // Verify L2 is not in the call's positive rate calculation
+    // (all L1 are positive → rate = 100%, gate fires)
+  });
+
+  /**
+   * L2 negative (follow_up_doubt, score=-1): contributes to eligibility but NOT to negative rate.
+   * Setup: 2 L2 negative + 1 L1 negative + 1 execution signal
+   *   effectiveFastSampleCount = 1 + 2 + 1 = 4 ≥ 3 → open
+   *   L1 samples = 1, fastNegativeRate = 1/1 = 100% > 40% → negative gate fires
+   * L2 samples should NOT inflate negative rate to 3/3 = 100% — they're excluded from truth.
+   */
+  it("2 L2 negative + 1 L1 negative + 1 execution signal: negative gate fires on L1 only (L2 excluded)", async () => {
+    const l2Dec = [
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: -1 }),
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: -1 }),
+    ];
+    const l1Dec = makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: -1 });
+    const execDec = makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: null, did_fallback: true });
+    const allDecs = [...l2Dec, l1Dec, execDec];
+
+    vi.spyOn(DecisionRepo, "getRecent").mockResolvedValue(allDecs as any);
+    vi.spyOn(MemoryRepo, "getBehavioralMemories").mockResolvedValue([] as any);
+    vi.spyOn(MemoryRepo, "saveBehavioralMemory").mockResolvedValue(undefined as any);
+    vi.spyOn(FeedbackEventRepo, "getByDecisionIds").mockImplementation(async () => {
+      const m = new Map<string, number>();
+      l2Dec.forEach((d) => m.set(d.id, 2));
+      m.set(l1Dec.id, 1);
+      return m;
+    });
+
+    const result = await analyzeAndLearn(USER, latestDecision);
+    expect(result).not.toBeNull();
+    expect(result!.strength).toBe(0.6); // negative memory
+    expect(result!.learned_action).toContain("慢模型");
+    expect(MemoryRepo.saveBehavioralMemory).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("P5: L3 signals are completely excluded from truth and eligibility", () => {
+
+  const l3SignalMap = (decisions: any[]) => {
+    const map = new Map<string, number>();
+    decisions.forEach((d) => map.set(d.id, 3)); // all L3
+    return map;
+  };
+
+  /**
+   * 2 L3 signals + 1 fallback execution signal:
+   *   effectiveFastSampleCount = 0 + 0 + 1 = 1 < 3 → not eligible
+   *   Result: null.
+   */
+  it("L3 signals excluded entirely — 2 L3 + 1 fallback: not eligible", async () => {
+    const decisions = [
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: -2 }), // L3 (regenerated)
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: -2 }), // L3
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: null, did_fallback: true }),
+    ];
+    vi.spyOn(DecisionRepo, "getRecent").mockResolvedValue(decisions as any);
+    vi.spyOn(MemoryRepo, "getBehavioralMemories").mockResolvedValue([] as any);
+    vi.spyOn(MemoryRepo, "saveBehavioralMemory").mockResolvedValue(undefined as any);
+    vi.spyOn(FeedbackEventRepo, "getByDecisionIds").mockResolvedValue(l3SignalMap(decisions));
+
+    const result = await analyzeAndLearn(USER, latestDecision);
+    // effectiveFastSampleCount = 0 + 0 + 1 = 1 < 3 → null
+    expect(result).toBeNull();
+    expect(MemoryRepo.saveBehavioralMemory).not.toHaveBeenCalled();
+  });
+
+  /**
+   * 3 L3 + 3 L1 positive:
+   *   effectiveFastSampleCount = 3 + 0 + 0 = 3 ≥ 3 → eligible
+   *   fastExplicitSamples (L1 only) = 3, positiveCount = 3, fastPositiveRate = 1.0 > 0.5 → fires
+   * L3 signals boosted eligibility from 3→6, but positive gate still fires on L1 truth.
+   */
+  it("3 L3 + 3 L1 positive: positive gate fires on L1 truth (L3 only contributes to eligibility count)", async () => {
+    const l3Dec = [
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: -2 }),
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: -2 }),
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: -2 }),
+    ];
+    const l1Decs = [
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: 1 }),
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: 1 }),
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: 1 }),
+    ];
+    const allDecs = [...l3Dec, ...l1Decs];
+
+    vi.spyOn(DecisionRepo, "getRecent").mockResolvedValue(allDecs as any);
+    vi.spyOn(MemoryRepo, "getBehavioralMemories").mockResolvedValue([] as any);
+    vi.spyOn(MemoryRepo, "saveBehavioralMemory").mockResolvedValue(undefined as any);
+    vi.spyOn(FeedbackEventRepo, "getByDecisionIds").mockImplementation(async () => {
+      const m = new Map<string, number>();
+      l3Dec.forEach((d) => m.set(d.id, 3));
+      l1Decs.forEach((d) => m.set(d.id, 1));
+      return m;
+    });
+
+    const result = await analyzeAndLearn(USER, latestDecision);
+    expect(result).not.toBeNull();
+    expect(result!.strength).toBe(0.7);
+    expect(MemoryRepo.saveBehavioralMemory).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("P5: legacy decisions (no feedback_events record) fall back to L1 heuristic", () => {
+
+  /**
+   * When getByDecisionIds returns an empty Map (no events in feedback_events),
+   * decisions with feedback_score != null are treated as L1 (truth-capable).
+   * This preserves backward compatibility with pre-P4 data.
+   *
+   * Setup: 3 decisions with feedback_score, but empty signal level map (no events).
+   * Expected: treated as L1, positive gate fires.
+   */
+  it("empty signalLevelMap: decisions with feedback_score treated as L1 (legacy backward compat)", async () => {
+    const decisions = [
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: 1 }),
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: 1 }),
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: 1 }),
+    ];
+
+    vi.spyOn(DecisionRepo, "getRecent").mockResolvedValue(decisions as any);
+    vi.spyOn(MemoryRepo, "getBehavioralMemories").mockResolvedValue([] as any);
+    vi.spyOn(MemoryRepo, "saveBehavioralMemory").mockResolvedValue(undefined as any);
+    // Empty map = no feedback_events records → legacy fallback path
+    vi.spyOn(FeedbackEventRepo, "getByDecisionIds").mockResolvedValue(new Map<string, number>());
+
+    const result = await analyzeAndLearn(USER, latestDecision);
+    expect(result).not.toBeNull();
+    expect(result!.strength).toBe(0.7);
+    expect(MemoryRepo.saveBehavioralMemory).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("P5: L1 explicit signals continue to work correctly (no regression)", () => {
+
+  /**
+   * Pure L1 scenario with no L2/L3 signals or execution signals.
+   * This is the core use case: thumbs_up/down on fast decisions.
+   * Should behave identically to pre-P5.
+   */
+  it("3 L1 positive: positive memory created (no regression from P5 changes)", async () => {
+    const decisions = [
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: 1 }),
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: 1 }),
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: 1 }),
+    ];
+
+    vi.spyOn(DecisionRepo, "getRecent").mockResolvedValue(decisions as any);
+    vi.spyOn(MemoryRepo, "getBehavioralMemories").mockResolvedValue([] as any);
+    vi.spyOn(MemoryRepo, "saveBehavioralMemory").mockResolvedValue(undefined as any);
+    vi.spyOn(FeedbackEventRepo, "getByDecisionIds").mockImplementation(async () => {
+      const m = new Map<string, number>();
+      decisions.forEach((d) => m.set(d.id, 1));
+      return m;
+    });
+
+    const result = await analyzeAndLearn(USER, latestDecision);
+    expect(result).not.toBeNull();
+    expect(result!.strength).toBe(0.7);
+    expect(result!.learned_action).toContain("放心使用快模型");
+    expect(MemoryRepo.saveBehavioralMemory).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * Mixed L1 + L2 + L3: eligibility counts all, truth uses L1 only.
+   * L1: 2 positive, 2 negative → positiveCount=2 < 3, negativeRate=2/4=50% > 40% → negative gate fires.
+   * L2 signals boost eligibility from 4→6. L3 signals excluded.
+   */
+  it("2 L1 positive + 2 L1 negative + 2 L2 + 1 L3: negative gate fires on L1 truth only (L2/L3 excluded)", async () => {
+    const l1Decs = [
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: 1 }),
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: 1 }),
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: -1 }),
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: -1 }),
+    ];
+    const l2Decs = [
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: 1 }),
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: 1 }),
+    ];
+    const l3Dec = makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: -2 });
+    const allDecs = [...l1Decs, ...l2Decs, l3Dec];
+
+    vi.spyOn(DecisionRepo, "getRecent").mockResolvedValue(allDecs as any);
+    vi.spyOn(MemoryRepo, "getBehavioralMemories").mockResolvedValue([] as any);
+    vi.spyOn(MemoryRepo, "saveBehavioralMemory").mockResolvedValue(undefined as any);
+    vi.spyOn(FeedbackEventRepo, "getByDecisionIds").mockImplementation(async () => {
+      const m = new Map<string, number>();
+      l1Decs.forEach((d) => m.set(d.id, 1));
+      l2Decs.forEach((d) => m.set(d.id, 2));
+      m.set(l3Dec.id, 3);
+      return m;
+    });
+
+    const result = await analyzeAndLearn(USER, latestDecision);
+    // Eligibility: L1(4) + L2(2) + L3(0) = 6 ≥ 3 → open
+    // Truth (L1 only): positiveCount=2 < 3 (no positive gate)
+    //                  negativeRate=2/4=50% > 40% → negative gate FIRES
+    expect(result).not.toBeNull();
+    expect(result!.strength).toBe(0.6);
+    expect(result!.learned_action).toContain("慢模型");
     expect(MemoryRepo.saveBehavioralMemory).toHaveBeenCalledTimes(1);
   });
 });

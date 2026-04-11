@@ -134,6 +134,40 @@ export const FeedbackEventRepo = {
       [uuid(), event.decisionId, event.userId, event.eventType, config.signal_level, config.source, event.rawData ? JSON.stringify(event.rawData) : null]
     );
   },
+
+  /**
+   * Batch-retrieves feedback events for a set of decision IDs.
+   * Returns a Map: decisionId → signal_level (the signal level of the event,
+   * which is deterministic per decision since each event_type maps to one signal_level).
+   *
+   * Used by analyzeAndLearn() to implement P5 signal-level gating:
+   *   L1 (signal_level=1) → enters truth stats + eligibility
+   *   L2 (signal_level=2) → enters eligibility only
+   *   L3 (signal_level=3) → excluded from all learning logic
+   *
+   * If no event exists for a decision_id → not present in the returned Map.
+   * analyzeAndLearn falls back to feedback_score != null as the L1/legacy heuristic.
+   */
+  async getByDecisionIds(userId: string, decisionIds: string[]): Promise<Map<string, number>> {
+    if (decisionIds.length === 0) return new Map();
+    const result = await query(
+      `SELECT decision_id, signal_level
+       FROM feedback_events
+       WHERE user_id = $1 AND decision_id = ANY($2)`,
+      [userId, decisionIds]
+    );
+    const map = new Map<string, number>();
+    for (const row of result.rows) {
+      // For deterministic behaviour: if multiple events exist for the same decision_id
+      // (should not happen in normal flow, but guard against it), use the LOWEST signal_level
+      // (most trustworhy signal wins).  signal_level: 1=strongest, 3=weakest.
+      const existing = map.get(row.decision_id);
+      if (existing === undefined || row.signal_level < existing) {
+        map.set(row.decision_id, Number(row.signal_level));
+      }
+    }
+    return map;
+  },
 };
 
 export const MemoryRepo = {

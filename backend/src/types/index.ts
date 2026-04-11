@@ -103,6 +103,8 @@ export interface ChatMessage {
   tool_calls?: ToolCall[];
   /** ID of the tool call this message is responding to (tool messages only) */
   tool_call_id?: string;
+  /** P4: ID of the routing DecisionRecord this message is responding to, used for implicit feedback detection */
+  decision_id?: string;
 }
 
 export interface ChatRequest {

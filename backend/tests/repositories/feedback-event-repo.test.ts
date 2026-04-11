@@ -136,6 +136,79 @@ describe("FeedbackEventRepo — core fields", () => {
   });
 });
 
+// ── getByDecisionIds (P5) ───────────────────────────────────────────────────────
+
+/**
+ * P5 Sprint 14: FeedbackEventRepo.getByDecisionIds() — batch query of signal_level.
+ * Returns Map<decisionId, signal_level>.
+ *
+ * Routing:
+ *   L1 (signal_level=1): thumbs_up, thumbs_down, accepted
+ *   L2 (signal_level=2): follow_up_thanks, follow_up_doubt
+ *   L3 (signal_level=3): regenerated, edited, unknown types
+ *
+ * Guard: if multiple events exist for the same decision_id, lowest signal_level wins
+ * (most trustworthy signal).
+ */
+describe("FeedbackEventRepo — getByDecisionIds (P5)", () => {
+  const d1 = "11111111-1111-1111-1111-000000000001"; // thumbs_up → L1
+  const d2 = "11111111-1111-1111-1111-000000000002"; // follow_up_thanks → L2
+  const d3 = "11111111-1111-1111-1111-000000000003"; // regenerated → L3
+  const d4 = "11111111-1111-1111-1111-000000000004"; // thumbs_down → L1
+  const d5 = "11111111-1111-1111-1111-000000000005"; // no event
+
+  beforeEach(async () => {
+    await truncateTables();
+    // Insert events for d1, d2, d3, d4 (no event for d5)
+    await FeedbackEventRepo.save({ decisionId: d1, userId: USER, eventType: "thumbs_up" });
+    await FeedbackEventRepo.save({ decisionId: d2, userId: USER, eventType: "follow_up_thanks" });
+    await FeedbackEventRepo.save({ decisionId: d3, userId: USER, eventType: "regenerated" });
+    await FeedbackEventRepo.save({ decisionId: d4, userId: USER, eventType: "thumbs_down" });
+  });
+
+  it("returns correct signal_level for each decision_id", async () => {
+    const map = await FeedbackEventRepo.getByDecisionIds(USER, [d1, d2, d3, d4]);
+    expect(map.get(d1)).toBe(1); // thumbs_up → L1
+    expect(map.get(d2)).toBe(2); // follow_up_thanks → L2
+    expect(map.get(d3)).toBe(3); // regenerated → L3
+    expect(map.get(d4)).toBe(1); // thumbs_down → L1
+  });
+
+  it("decision with no event is absent from map (not present at all)", async () => {
+    const map = await FeedbackEventRepo.getByDecisionIds(USER, [d1, d5]);
+    expect(map.has(d1)).toBe(true);
+    expect(map.has(d5)).toBe(false);
+    expect(map.size).toBe(1);
+  });
+
+  it("returns empty Map for nonexistent user", async () => {
+    const map = await FeedbackEventRepo.getByDecisionIds("nonexistent-user", [d1]);
+    expect(map.size).toBe(0);
+  });
+
+  it("returns empty Map for empty decisionIds array", async () => {
+    const map = await FeedbackEventRepo.getByDecisionIds(USER, []);
+    expect(map.size).toBe(0);
+  });
+
+  it("multiple events for same decision_id: lowest signal_level wins", async () => {
+    // Save a second event for d1 with L2 signal
+    await FeedbackEventRepo.save({ decisionId: d1, userId: USER, eventType: "follow_up_doubt" });
+    const map = await FeedbackEventRepo.getByDecisionIds(USER, [d1]);
+    // thumbs_up (L1) vs follow_up_doubt (L2) → L1 wins (lower = stronger)
+    expect(map.get(d1)).toBe(1);
+  });
+
+  it("filters by user_id — other user's events are not returned", async () => {
+    const OTHER_USER = "22222222-2222-2222-2222-000000000001";
+    await FeedbackEventRepo.save({ decisionId: d1, userId: OTHER_USER, eventType: "thumbs_down" });
+    const map = await FeedbackEventRepo.getByDecisionIds(USER, [d1]);
+    // Only USER's thumbs_up (L1), NOT OTHER_USER's thumbs_down
+    expect(map.get(d1)).toBe(1);
+    expect(map.size).toBe(1);
+  });
+});
+
 // ── Helper ─────────────────────────────────────────────────────────────────────
 
 async function getLastRow(): Promise<Record<string, unknown>> {

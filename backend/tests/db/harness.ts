@@ -126,6 +126,7 @@ export async function truncateTables(): Promise<void> {
       // TRUNCATE in reverse FK-dependency order; CASCADE handles children
       await client.query(`
         TRUNCATE TABLE
+          feedback_events,
           execution_results,
           task_traces,
           task_summaries,

@@ -1,6 +1,6 @@
 import { v4 as uuid } from "uuid";
 import type { BehavioralMemory, DecisionRecord } from "../types/index.js";
-import { MemoryRepo, DecisionRepo } from "../db/repositories.js";
+import { MemoryRepo, DecisionRepo, FeedbackEventRepo } from "../db/repositories.js";
 
 export async function analyzeAndLearn(userId: string, latestDecision: DecisionRecord): Promise<BehavioralMemory | null> {
   const recentDecisions = await DecisionRepo.getRecent(userId, 50);
@@ -10,28 +10,54 @@ export async function analyzeAndLearn(userId: string, latestDecision: DecisionRe
 
   const fastDecisions = sameIntentDecisions.filter((d: any) => d.selected_role === "fast");
 
-  // P4.2: Split fast decisions into two sample layers.
-  //
-  // Layer 1 — Explicit feedback samples: fast decisions with a user-provided feedback_score.
-  //   These are the ground truth; only this layer defines positive / negative counts.
-  const fastExplicitSamples = fastDecisions.filter((d: any) => d.feedback_score !== null);
+  // P5: Fetch signal_level for all fast decisions from feedback_events.
+  // Used to gate which samples contribute to truth stats vs. eligibility only.
+  const decisionIds = fastDecisions.map((d: any) => d.id);
+  const signalLevelMap = await FeedbackEventRepo.getByDecisionIds(userId, decisionIds);
 
-  // Layer 2 — Execution signal samples: fast decisions WITHOUT explicit feedback, but
-  //   with a reliable system-level quality signal.  Two signals qualify:
-  //     • did_fallback = true  → fast model failed the quality gate; system switched to slow.
-  //     • cost_saved_vs_slow > 0  → fast routing completed without fallback and saved cost.
-  //   Purpose: these samples only contribute to the *eligibility threshold* (minimum sample
-  //   count before we attempt any learning).  They do NOT affect positive/negative counts
-  //   or positive/negative rates — those remain computed solely on explicit feedback.
+  // P4.2 legacy Layer 2 — Execution signal samples (unchanged):
+  // fast decisions WITHOUT explicit feedback but WITH reliable system-level quality signal.
+  // These contribute to the eligibility threshold only, not to truth stats.
   const fastExecutionSignalSamples = fastDecisions.filter(
     (d: any) =>
       d.feedback_score === null &&
       (d.did_fallback === true || (d.cost_saved_vs_slow != null && Number(d.cost_saved_vs_slow) > 0))
   );
 
-  // Combined eligibility count: explicit + execution-signal samples.
-  // We only need to observe enough evidence before analysing patterns; either source qualifies.
-  const effectiveFastSampleCount = fastExplicitSamples.length + fastExecutionSignalSamples.length;
+  // P5: Layer 1 split by signal_level.
+  //
+  // fastExplicitSamples (L1 truth-capable): feedback_score != null AND
+  //   signal_level is either absent (legacy, treat as L1) or is 1.
+  //
+  // fastL2Samples (eligibility-only): has feedback_score, signal_level=2 (follow_up_thanks/doubt).
+  //   These are saved to decision_logs so the compatibility layer stays intact,
+  //   but they must NOT influence positive/negative truth statistics.
+  //
+  // fastL3Samples: signal_level=3 (regenerated, edited).  Completely excluded.
+  //
+  // Note: signalLevelMap entries are optional.  Decisions without a feedback_events record
+  // (legacy data before P4 or decisions with no userId) fall through to the legacy
+  // feedback_score !== null heuristic → treated as L1 (truth-capable).
+  const fastExplicitSamples: any[] = [];
+  const fastL2Samples: any[] = [];
+  const fastL3Samples: any[] = [];
+
+  for (const d of fastDecisions) {
+    if (d.feedback_score === null) continue; // execution signals handled above
+    const sl = signalLevelMap.get(d.id);
+    if (sl === undefined || sl === 1) {
+      fastExplicitSamples.push(d); // L1 or legacy (no event) — truth-capable
+    } else if (sl === 2) {
+      fastL2Samples.push(d);        // L2 — eligibility only, no truth
+    } else {
+      fastL3Samples.push(d);         // L3 — excluded entirely
+    }
+  }
+
+  // P5 eligibility: L1 (truth-capable explicit) + L2 (weak signal) + execution signals.
+  // L3 is excluded from eligibility as noise.
+  // This keeps the minimum observation window aligned with P4.2 semantics.
+  const effectiveFastSampleCount = fastExplicitSamples.length + fastL2Samples.length + fastExecutionSignalSamples.length;
 
   // Minimum observation window: 3 effective samples required to proceed.
   if (effectiveFastSampleCount < 3) return null;

@@ -8,13 +8,19 @@ export interface LearningResult {
   new_memory: string | null; milestones: string[]; implicit_feedback: string | null;
 }
 
-export async function learnFromInteraction(decision: DecisionRecord, userMessage?: string, previousDecisionId?: string | null): Promise<LearningResult> {
+export async function learnFromInteraction(
+  decision: DecisionRecord,
+  userMessage?: string,
+  previousDecisionId?: string | null,
+  userId?: string, // P4: needed to write feedback_events
+): Promise<LearningResult> {
   const result: LearningResult = { new_memory: null, milestones: [], implicit_feedback: null };
 
   if (userMessage && previousDecisionId) {
     const implicit = detectImplicitFeedback(userMessage, previousDecisionId);
-    if (implicit && implicit.confidence > 0.6) {
-      await recordFeedback(previousDecisionId, implicit.type);
+    if (implicit && implicit.confidence >= 0.6) {
+      // P4: pass userId so FeedbackEventRepo.save() is not skipped
+      await recordFeedback(previousDecisionId, implicit.type, userId, { confidence: implicit.confidence });
       result.implicit_feedback = implicit.type;
     }
   }
