@@ -24,12 +24,21 @@ function makeDecision(overrides: {
   intent?: string;
   selected_role?: "fast" | "slow";
   feedback_score?: number | null;
-}): { id: string; intent: string; selected_role: string; feedback_score: number | null; input_features: { intent: string } } {
+  /** P4.2: execution signal fields */
+  did_fallback?: boolean;
+  cost_saved_vs_slow?: number | null;
+}): {
+  id: string; intent: string; selected_role: string; feedback_score: number | null;
+  did_fallback: boolean; cost_saved_vs_slow: number | null;
+  input_features: { intent: string };
+} {
   return {
     id: overrides.id ?? "d-" + Math.random(),
     intent: overrides.intent ?? "simple_qa",
     selected_role: overrides.selected_role ?? "fast",
     feedback_score: overrides.feedback_score ?? null,
+    did_fallback: overrides.did_fallback ?? false,
+    cost_saved_vs_slow: overrides.cost_saved_vs_slow ?? null,
     input_features: { intent: overrides.intent ?? "simple_qa" },
   };
 }
@@ -397,5 +406,205 @@ describe("return value shape for positive memory", () => {
     expect(typeof result!.last_activated).toBe("number");
     expect(Array.isArray(result!.source_decision_ids)).toBe(true);
     expect(typeof result!.created_at).toBe("number");
+  });
+});
+
+// ── P4.2: Execution Signal Sample Eligibility ─────────────────────────────────
+//
+// Validates Sprint 13 P4.2 behaviour: high-reliability execution signals
+// (did_fallback=true, cost_saved_vs_slow>0) contribute to the effectiveFastSampleCount
+// threshold, but do NOT affect positive / negative counts or rates.
+//
+// Core invariant:
+//   effectiveFastSampleCount = fastExplicitSamples.length + fastExecutionSignalSamples.length
+//   Positive/negative gates still only read fastExplicitSamples.
+//
+// What counts as an execution signal sample:
+//   • did_fallback=true with NO explicit feedback  → qualifies
+//   • cost_saved_vs_slow > 0 with NO explicit feedback  → qualifies
+//   • feedback_score is not null  → always explicit, never counted as execution signal
+
+describe("P4.2 execution signal samples contribute to eligibility threshold (effectiveFastSampleCount)", () => {
+
+  /**
+   * Baseline: 2 explicit samples alone are not enough to open the eligibility window.
+   * Without execution signal help, analysis returns null.
+   */
+  it("returns null when only 2 explicit samples and no execution signal samples", async () => {
+    const decisions = [
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: 1 }),
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: 1 }),
+    ];
+    const result = await stubAnalyzelearn(USER, latestDecision, decisions);
+    expect(result).toBeNull();
+    expect(MemoryRepo.saveBehavioralMemory).not.toHaveBeenCalled();
+  });
+
+  /**
+   * P4.2 gain: 2 explicit samples + 1 execution signal sample (did_fallback=true)
+   * → effectiveFastSampleCount = 3, eligibility window opens.
+   * With only 2 positive explicit samples (positiveCount=2 < 3), positive gate won't fire.
+   * With 0 explicit negative samples, negative gate won't fire.
+   * Result: null (eligibility is open, but no gate fires yet).
+   */
+  it("opens eligibility window with 2 explicit + 1 fallback signal (effectiveFastSampleCount=3)", async () => {
+    const decisions = [
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: 1 }),
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: 1 }),
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: null, did_fallback: true }),
+    ];
+    const result = await stubAnalyzelearn(USER, latestDecision, decisions);
+    // Eligibility opens, but positive gate needs positiveCount >= 3 — only 2 here.
+    // Negative gate: 0/2 explicit = 0% < 40% — doesn't fire.
+    expect(result).toBeNull();
+    expect(MemoryRepo.saveBehavioralMemory).not.toHaveBeenCalled();
+  });
+
+  /**
+   * P4.2 gain: 2 explicit positive + 1 cost_saved signal opens eligibility.
+   * Same outcome as above — not enough explicit positives to fire positive gate.
+   */
+  it("opens eligibility with 2 explicit + 1 cost_saved signal (effectiveFastSampleCount=3)", async () => {
+    const decisions = [
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: 1 }),
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: 1 }),
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: null, cost_saved_vs_slow: 0.002 }),
+    ];
+    const result = await stubAnalyzelearn(USER, latestDecision, decisions);
+    expect(result).toBeNull();
+    expect(MemoryRepo.saveBehavioralMemory).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Execution signals do NOT count toward positiveCount.
+   * 2 explicit positive + 2 execution signal samples:
+   *   effectiveFastSampleCount = 4 → eligibility open
+   *   positiveCount = 2 (only explicit) → positive gate: 2 < 3 → no fire
+   * Result: null.
+   */
+  it("execution signal samples do NOT inflate positiveCount — 2 explicit + 2 signals still no positive memory", async () => {
+    const decisions = [
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: 1 }),
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: 1 }),
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: null, did_fallback: true }),
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: null, cost_saved_vs_slow: 0.005 }),
+    ];
+    const result = await stubAnalyzelearn(USER, latestDecision, decisions);
+    // effectiveFastSampleCount=4 → eligibility open
+    // positiveCount=2 (explicit only) → positive gate: 2 < 3 → no fire
+    expect(result).toBeNull();
+    expect(MemoryRepo.saveBehavioralMemory).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Execution signals do NOT count toward negativeCount.
+   * 1 explicit negative + 2 fallback signals:
+   *   effectiveFastSampleCount = 3 → eligibility open
+   *   explicit samples = 1, fastNegativeRate = 1/1 = 100% > 40%  ← negative gate fires
+   *
+   * Wait — this is an interesting edge case. When fastExplicitSamples.length=1,
+   * fastNegativeRate = 1/1 = 100% which IS > 0.4.  Negative gate fires.
+   * We should verify this, but also document the concern:
+   * a single negative explicit sample + 2 fallback signals creates a negative memory.
+   * This is intentional MVP behaviour — fallback signals lower the observation bar.
+   */
+  it("1 explicit negative + 2 fallback signals: negative gate fires (fastNegativeRate=100%)", async () => {
+    const decisions = [
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: -1 }),
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: null, did_fallback: true }),
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: null, did_fallback: true }),
+    ];
+    const result = await stubAnalyzelearn(USER, latestDecision, decisions);
+    // effectiveFastSampleCount=3 → eligibility open
+    // fastNegativeRate = 1/1 = 100% > 40% → negative gate fires
+    expect(result).not.toBeNull();
+    expect(result!.strength).toBe(0.6);
+    expect(result!.learned_action).toContain("慢模型");
+    expect(MemoryRepo.saveBehavioralMemory).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * Execution signals with feedback_score present are treated as EXPLICIT, not execution signal.
+   * A decision with did_fallback=true AND a valid feedback_score is an explicit sample.
+   * It should contribute to positive/negative counts.
+   */
+  it("decision with did_fallback=true AND feedback_score is treated as explicit sample (not execution signal)", async () => {
+    // 3 decisions: 2 explicit positive + 1 fallback-with-positive-feedback
+    // The 3rd is explicit (feedback_score=1), so positiveCount=3, eligible for positive gate.
+    const decisions = [
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: 1 }),
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: 1 }),
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: 1, did_fallback: true }),
+    ];
+    const result = await stubAnalyzelearn(USER, latestDecision, decisions);
+    // All 3 are explicit: fastExplicitSamples.length=3, positiveCount=3, fastPositiveRate=1.0
+    // Positive gate: positiveCount>=3 && positiveRate>0.5 → fires
+    expect(result).not.toBeNull();
+    expect(result!.strength).toBe(0.7);
+    expect(MemoryRepo.saveBehavioralMemory).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * cost_saved_vs_slow = 0 does NOT qualify as an execution signal sample.
+   * Only cost_saved > 0 counts.
+   */
+  it("cost_saved_vs_slow=0 does NOT count as execution signal sample", async () => {
+    const decisions = [
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: 1 }),
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: 1 }),
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: null, cost_saved_vs_slow: 0 }),
+    ];
+    const result = await stubAnalyzelearn(USER, latestDecision, decisions);
+    // cost_saved=0 is excluded, so fastExecutionSignalSamples.length=0
+    // effectiveFastSampleCount=2 < 3 → returns null before any gate
+    expect(result).toBeNull();
+    expect(MemoryRepo.saveBehavioralMemory).not.toHaveBeenCalled();
+  });
+
+  /**
+   * null cost_saved_vs_slow does NOT qualify.
+   */
+  it("cost_saved_vs_slow=null does NOT count as execution signal sample", async () => {
+    const decisions = [
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: 1 }),
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: 1 }),
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: null, cost_saved_vs_slow: null }),
+    ];
+    const result = await stubAnalyzelearn(USER, latestDecision, decisions);
+    expect(result).toBeNull();
+  });
+
+  /**
+   * P4.1 regression: existing behaviour when all samples are explicit still works.
+   * 3 explicit positives → positive memory created. Execution signal layer is a no-op.
+   */
+  it("P4.1 regression: 3 explicit positives still creates positive memory (execution signal layer transparent)", async () => {
+    const decisions = [
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: 1 }),
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: 1 }),
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: 1 }),
+    ];
+    const result = await stubAnalyzelearn(USER, latestDecision, decisions);
+    expect(result).not.toBeNull();
+    expect(result!.strength).toBe(0.7);
+    expect(result!.learned_action).toContain("放心使用快模型");
+  });
+
+  /**
+   * Mixed: 3 explicit positive + 1 execution signal → positive gate fires on explicit only.
+   * execution signal does not change positive rate or positive count.
+   */
+  it("3 explicit positives + 1 execution signal: positive gate fires (execution signal doesn't alter positive rate)", async () => {
+    const decisions = [
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: 1 }),
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: 1 }),
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: 1 }),
+      makeDecision({ intent: INTENT, selected_role: "fast", feedback_score: null, did_fallback: true }),
+    ];
+    const result = await stubAnalyzelearn(USER, latestDecision, decisions);
+    // fastExplicitSamples=3, positiveCount=3, fastPositiveRate=1.0 → positive gate fires
+    expect(result).not.toBeNull();
+    expect(result!.strength).toBe(0.7);
+    expect(MemoryRepo.saveBehavioralMemory).toHaveBeenCalledTimes(1);
   });
 });
