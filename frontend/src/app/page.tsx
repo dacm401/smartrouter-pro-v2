@@ -10,6 +10,8 @@ import { DebugPanel } from "@/components/workbench/DebugPanel";
 import { Header } from "@/components/layout/Header";
 import { Sidebar } from "@/components/layout/Sidebar";
 
+type NavView = "chat" | "tasks" | "memory" | "dashboard";
+
 const DEFAULT_USER_ID = "dev-user";
 
 type WorkbenchTab = "evidence" | "trace" | "health" | "debug";
@@ -20,7 +22,7 @@ export default function HomePage() {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [workbenchTab, setWorkbenchTab] = useState<WorkbenchTab>("evidence");
   const [userId, setUserId] = useState(DEFAULT_USER_ID);
-  const [activeNav, setActiveNav] = useState("chat");
+  const [activeNav, setActiveNav] = useState<NavView>("chat");
 
   const tabs: { id: WorkbenchTab; icon: string; label: string }[] = [
     { id: "evidence", icon: "🔍", label: "证据" },
@@ -45,17 +47,97 @@ export default function HomePage() {
       {/* Body: Sidebar + Chat + optional Workbench */}
       <div className="flex flex-1 overflow-hidden">
         {/* Left: Sidebar */}
-        <Sidebar activeNav={activeNav} onNavChange={setActiveNav} />
+        <Sidebar activeNav={activeNav} onNavChange={(id) => setActiveNav(id as NavView)} onSettingsClick={() => setShowSettings(true)} />
 
-        {/* Center: Chat Area */}
+        {/* Center: View Area */}
         <main
           className="flex-1 overflow-hidden"
           style={{ maxWidth: sidebarOpen ? undefined : "100%" }}
         >
-          <ChatInterface
-            onTaskIdChange={setSelectedTaskId}
-            userId={userId}
-          />
+          {activeNav === "chat" && (
+            <ChatInterface
+              onTaskIdChange={setSelectedTaskId}
+              userId={userId}
+            />
+          )}
+
+          {activeNav === "tasks" && (
+            <div className="h-full flex flex-col items-center justify-center" style={{ backgroundColor: "var(--bg-base)" }}>
+              <div className="text-center">
+                <div className="text-4xl mb-4">📋</div>
+                <div className="text-base font-semibold mb-2" style={{ color: "var(--text-primary)" }}>
+                  任务管理
+                </div>
+                <div className="text-sm" style={{ color: "var(--text-muted)" }}>
+                  在右侧面板查看活跃任务列表
+                </div>
+                <div className="text-xs mt-3 px-4 py-2 rounded-lg inline-block" style={{ backgroundColor: "var(--bg-elevated)", color: "var(--text-secondary)" }}>
+                  发送消息 → 自动创建任务 → 右侧查看详情
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeNav === "memory" && (
+            <div className="h-full flex flex-col items-center justify-center" style={{ backgroundColor: "var(--bg-base)" }}>
+              <div className="text-center">
+                <div className="text-4xl mb-4">🧠</div>
+                <div className="text-base font-semibold mb-2" style={{ color: "var(--text-primary)" }}>
+                  记忆系统
+                </div>
+                <div className="text-sm" style={{ color: "var(--text-muted)" }}>
+                  SmartRouter 的长期学习记忆
+                </div>
+                <div className="mt-3 space-y-2 text-xs" style={{ color: "var(--text-muted)" }}>
+                  <div className="flex items-center gap-2 justify-center">
+                    <span style={{ color: "var(--accent-blue)" }}>●</span>
+                    <span>决策偏好学习</span>
+                  </div>
+                  <div className="flex items-center gap-2 justify-center">
+                    <span style={{ color: "var(--accent-green)" }}>●</span>
+                    <span>模型性能统计</span>
+                  </div>
+                  <div className="flex items-center gap-2 justify-center">
+                    <span style={{ color: "var(--accent-amber)" }}>●</span>
+                    <span>信号质量追踪</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeNav === "dashboard" && (
+            <div className="h-full flex flex-col items-center justify-center" style={{ backgroundColor: "var(--bg-base)" }}>
+              <div className="text-center">
+                <div className="text-4xl mb-4">📊</div>
+                <div className="text-base font-semibold mb-2" style={{ color: "var(--text-primary)" }}>
+                  数据看板
+                </div>
+                <div className="text-sm mb-4" style={{ color: "var(--text-muted)" }}>
+                  系统运行统计总览
+                </div>
+                <div className="grid grid-cols-3 gap-3 px-8">
+                  {[
+                    { label: "总决策数", value: "—", color: "var(--accent-blue)" },
+                    { label: "成功率", value: "—", color: "var(--accent-green)" },
+                    { label: "Token 节省", value: "—", color: "var(--accent-amber)" },
+                  ].map((card) => (
+                    <div
+                      key={card.label}
+                      className="px-4 py-3 rounded-xl text-center"
+                      style={{ backgroundColor: "var(--bg-elevated)", border: "1px solid var(--border-subtle)" }}
+                    >
+                      <div className="text-lg font-bold" style={{ color: card.color }}>{card.value}</div>
+                      <div className="text-[10px] mt-0.5" style={{ color: "var(--text-muted)" }}>{card.label}</div>
+                    </div>
+                  ))}
+                </div>
+                <div className="text-xs mt-4" style={{ color: "var(--text-muted)" }}>
+                  发送消息后统计数据将实时更新
+                </div>
+              </div>
+            </div>
+          )}
         </main>
 
         {/* Right: Workbench Sidebar */}

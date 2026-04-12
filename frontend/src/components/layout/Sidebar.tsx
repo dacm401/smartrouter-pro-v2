@@ -16,9 +16,10 @@ const NAV_ITEMS: NavItem[] = [
 interface SidebarProps {
   activeNav: string;
   onNavChange: (id: string) => void;
+  onSettingsClick: () => void;
 }
 
-export function Sidebar({ activeNav, onNavChange }: SidebarProps) {
+export function Sidebar({ activeNav, onNavChange, onSettingsClick }: SidebarProps) {
   return (
     <aside
       className="w-[52px] flex-shrink-0 flex flex-col items-center py-3 border-r"
@@ -65,7 +66,8 @@ export function Sidebar({ activeNav, onNavChange }: SidebarProps) {
       <div className="w-full px-1">
         <button
           title="Settings"
-          className="w-full flex flex-col items-center justify-center py-2 rounded-lg text-xs transition-all"
+          onClick={onSettingsClick}
+          className="w-full flex flex-col items-center justify-center py-2 rounded-lg text-xs transition-all cursor-pointer hover:opacity-80"
           style={{ color: "var(--text-muted)" }}
         >
           <span className="text-sm leading-none mb-0.5">⚙️</span>
