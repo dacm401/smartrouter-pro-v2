@@ -348,7 +348,7 @@ chatRouter.post("/chat", async (c) => {
           .catch((e) => console.error("[stream] learnFromInteraction failed:", e));
         TaskRepo.updateExecution(taskId, contextResult.original_tokens + roughTokens)
           .catch((e) => console.error("[stream] updateExecution failed:", e));
-        TaskRepo.createTrace({ id: uuid(), task_id: taskId, type: "response", detail: { latency_ms: streamLatency, streaming: true } })
+        TaskRepo.createTrace({ id: uuid(), task_id: taskId, type: "response", detail: { input_tokens: contextResult.original_tokens, output_tokens: roughTokens, latency_ms: streamLatency, streaming: true } })
           .catch((e) => console.error("[stream] createTrace failed:", e));
       });
     }
