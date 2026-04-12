@@ -1,7 +1,8 @@
 import { Hono } from "hono";
 import { calculateDashboard } from "../logging/metrics-calculator.js";
-import { GrowthRepo } from "../db/repositories.js";
+import { GrowthRepo, DecisionRepo } from "../db/repositories.js";
 import { getContextUserId } from "../middleware/identity.js";
+import { calcBaselineCost } from "../config/pricing.js";
 
 const dashboardRouter = new Hono();
 
@@ -26,6 +27,17 @@ dashboardRouter.get("/growth/:userId", async (c) => {
     const profile = await GrowthRepo.getProfile(userId);
     return c.json(profile);
   } catch (error: any) { return c.json({ error: error.message }, 500); }
+});
+
+dashboardRouter.get("/cost-stats/:userId", async (c) => {
+  const userId = getContextUserId(c)!;
+  try {
+    const stats = await DecisionRepo.getCostStats(userId);
+    return c.json(stats);
+  } catch (error: any) {
+    console.error("Cost stats error:", error);
+    return c.json({ error: error.message }, 500);
+  }
 });
 
 export { dashboardRouter };

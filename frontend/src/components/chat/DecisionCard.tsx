@@ -6,6 +6,33 @@ import { formatCost, formatTokens } from "@/lib/utils";
 
 interface DecisionCardProps { decision: any; }
 
+// Sprint 23 P0-B: 用户语言化决策解释
+function buildExplanation(
+  selectedRole: string,
+  complexityScore: number,
+  intent: string,
+  didFallback: boolean,
+): string {
+  if (didFallback) {
+    return "⚠️ 快速模式质量不达标，已自动切换至深度模式补充回答。";
+  }
+  if (selectedRole === "fast") {
+    if (complexityScore < 30) {
+      return `✅ 选择快速模式：问题复杂度低（${complexityScore}/100），快速模型回答质量与最强模型相当，速度快 4 倍，成本低约 20 倍。`;
+    } else {
+      return `✅ 选择快速模式：复杂度中等（${complexityScore}/100），在保证质量的前提下节省成本。`;
+    }
+  }
+  if (selectedRole === "slow") {
+    if (complexityScore >= 70) {
+      return `🧠 选择深度模式：问题复杂度高（${complexityScore}/100），启用最强模型确保回答质量。`;
+    } else {
+      return `🧠 选择深度模式：意图为「${intent}」，需要深度推理能力。`;
+    }
+  }
+  return `已根据问题特征（意图：${intent}，复杂度：${complexityScore}/100）选择最优处理方式。`;
+}
+
 export function DecisionCard({ decision }: DecisionCardProps) {
   const [expanded, setExpanded] = useState(false);
   if (!decision) return null;
@@ -131,6 +158,21 @@ export function DecisionCard({ decision }: DecisionCardProps) {
           >
             <span>⏱️ {execution?.latency_ms}ms</span>
             <span className="font-mono truncate max-w-[120px]">{execution?.model_used}</span>
+          </div>
+
+          {/* Sprint 23 P0-B: 用户语言化决策解释 */}
+          <div
+            className="mt-2 pt-2"
+            style={{ borderTop: "1px solid var(--border-subtle)" }}
+          >
+            <p className="text-xs leading-relaxed" style={{ color: "var(--text-secondary)" }}>
+              {buildExplanation(
+                routing?.selected_role ?? "",
+                (routing?.scores?.slow ?? 0) * 100,
+                routing?.intent ?? "",
+                execution?.did_fallback ?? false,
+              )}
+            </p>
           </div>
         </div>
       )}

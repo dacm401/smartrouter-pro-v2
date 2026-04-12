@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
-import { getDashboard, getGrowth } from "@/lib/api";
+import { getDashboard, getGrowth, fetchCostStats } from "@/lib/api";
+import type { CostStats } from "@/lib/api";
 
 interface DashboardData {
   total_chats: number;
@@ -59,17 +60,20 @@ interface DashboardViewProps {
 export default function DashboardView({ userId }: DashboardViewProps) {
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [growth, setGrowth] = useState<GrowthData | null>(null);
+  const [costStats, setCostStats] = useState<CostStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([
+    Promise.allSettled([
       getDashboard(userId),
       getGrowth(userId),
+      fetchCostStats(userId),
     ])
-      .then(([dashData, growthData]) => {
-        setDashboard(dashData);
-        setGrowth(growthData);
+      .then(([dashResult, growthResult, costResult]) => {
+        if (dashResult.status === "fulfilled") setDashboard(dashResult.value);
+        if (growthResult.status === "fulfilled") setGrowth(growthResult.value);
+        if (costResult.status === "fulfilled") setCostStats(costResult.value);
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
@@ -78,10 +82,11 @@ export default function DashboardView({ userId }: DashboardViewProps) {
   const reload = () => {
     setLoading(true);
     setError(null);
-    Promise.all([getDashboard(userId), getGrowth(userId)])
-      .then(([dashData, growthData]) => {
-        setDashboard(dashData);
-        setGrowth(growthData);
+    Promise.allSettled([getDashboard(userId), getGrowth(userId), fetchCostStats(userId)])
+      .then(([dashResult, growthResult, costResult]) => {
+        if (dashResult.status === "fulfilled") setDashboard(dashResult.value);
+        if (growthResult.status === "fulfilled") setGrowth(growthResult.value);
+        if (costResult.status === "fulfilled") setCostStats(costResult.value);
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
@@ -120,16 +125,82 @@ export default function DashboardView({ userId }: DashboardViewProps) {
 
         {/* KPI Cards */}
         {loading ? (
-          <div className="grid grid-cols-4 gap-3 mb-5">
-            {[1, 2, 3, 4].map((i) => <SkeletonCard key={i} />)}
+          <div className="grid grid-cols-3 gap-3 mb-3">
+            {[1, 2, 3].map((i) => <SkeletonCard key={i} />)}
           </div>
         ) : (
-          <div className="grid grid-cols-4 gap-3 mb-5">
+          <div className="grid grid-cols-3 gap-3 mb-3">
             <KpiCard label="今日对话" value={dashboard?.total_chats ?? 0} color="var(--accent-blue)" />
             <KpiCard label="满意率" value={dashboard?.satisfaction_rate ?? 0} unit="%" color="var(--accent-green)" />
-            <KpiCard label="Token 节省" value={dashboard?.token_savings_rate ?? 0} unit="%" color="var(--accent-amber)" />
             <KpiCard label="快速路由" value={dashboard?.fast_route_rate ?? 0} unit="%" color="var(--accent-purple)" />
           </div>
+        )}
+
+        {/* Sprint 23 P0-A: ROI 成本节省卡片（全宽，突出显示） */}
+        {loading ? (
+          <div className="rounded-xl p-5 mb-5 animate-pulse" style={{ backgroundColor: "var(--bg-surface)", border: "1px solid var(--border-subtle)" }}>
+            <div className="h-6 w-48 rounded mb-2" style={{ backgroundColor: "var(--border-default)" }} />
+            <div className="h-4 w-72 rounded" style={{ backgroundColor: "var(--border-subtle)" }} />
+          </div>
+        ) : (
+          (() => {
+            const pct = costStats?.saved_percent ?? 0;
+            const roiColor = pct >= 50
+              ? "var(--accent-green)"
+              : pct >= 20
+              ? "var(--accent-blue)"
+              : "var(--text-muted)";
+            const borderColor = pct >= 50
+              ? "rgba(16,185,129,0.3)"
+              : pct >= 20
+              ? "rgba(59,130,246,0.3)"
+              : "var(--border-subtle)";
+            return (
+              <div
+                className="rounded-xl p-5 mb-5"
+                style={{ backgroundColor: "var(--bg-surface)", border: `1px solid ${borderColor}` }}
+              >
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-sm">💰</span>
+                  <span className="text-sm font-medium" style={{ color: "var(--text-secondary)" }}>
+                    成本节省（近 30 天）
+                  </span>
+                </div>
+                <div className="flex items-center gap-6 flex-wrap">
+                  <div>
+                    <div className="text-3xl font-bold" style={{ color: roiColor }}>
+                      {pct}%
+                    </div>
+                    <div className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
+                      相比直打 GPT-4o
+                    </div>
+                  </div>
+                  <div style={{ width: "1px", height: "40px", backgroundColor: "var(--border-subtle)" }} />
+                  <div>
+                    <div className="text-lg font-semibold" style={{ color: "var(--accent-green)" }}>
+                      ${(costStats?.saved_usd ?? 0).toFixed(2)}
+                    </div>
+                    <div className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
+                      节省金额
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-sm" style={{ color: "var(--text-muted)" }}>
+                      实际 ${(costStats?.total_spent_usd ?? 0).toFixed(4)}
+                    </div>
+                    <div className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
+                      理论 ${(costStats?.baseline_spent_usd ?? 0).toFixed(4)}
+                    </div>
+                  </div>
+                  <div className="ml-auto">
+                    <div className="text-sm font-medium" style={{ color: "var(--text-secondary)" }}>
+                      {costStats?.task_count ?? 0} 次对话
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()
         )}
 
         {/* Two-column: Intent + Model Distribution */}

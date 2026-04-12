@@ -191,3 +191,19 @@ export async function patchTask(taskId: string, userId: string, action: "resume"
   });
   return res.ok;
 }
+
+export interface CostStats {
+  total_spent_usd: number;
+  baseline_spent_usd: number;
+  saved_usd: number;
+  saved_percent: number;
+  task_count: number;
+  period_days: number;
+}
+
+export async function fetchCostStats(userId: string): Promise<CostStats> {
+  const { apiBase } = getApiConfig();
+  const res = await fetch(`${apiBase}/api/cost-stats/${encodeURIComponent(userId)}`);
+  if (!res.ok) throw new Error(`加载成本统计失败 (${res.status})`);
+  return res.json() as Promise<CostStats>;
+}

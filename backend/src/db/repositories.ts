@@ -150,6 +150,58 @@ export const DecisionRepo = {
       .filter((r: any) => r.value !== null)
       .map((r: any) => ({ date: r.date.toISOString().split("T")[0], value: Number(r.value) }));
   },
+
+  /** Sprint 23: 30-day cost ROI stats for Dashboard */
+  async getCostStats(userId: string): Promise<{
+    total_spent_usd: number;
+    baseline_spent_usd: number;
+    saved_usd: number;
+    saved_percent: number;
+    task_count: number;
+    period_days: number;
+  }> {
+    // Import pricing here to avoid circular dependency
+    const { calcBaselineCost } = await import("../config/pricing.js");
+
+    const result = await query(
+      `SELECT
+        COUNT(*)::int as task_count,
+        COALESCE(SUM(exec_input_tokens), 0)::int as total_input_tokens,
+        COALESCE(SUM(exec_output_tokens), 0)::int as total_output_tokens,
+        COALESCE(SUM(total_cost_usd), 0)::float as total_spent_usd
+      FROM decision_logs
+      WHERE user_id = $1
+        AND created_at >= NOW() - INTERVAL '30 days'
+        AND exec_input_tokens IS NOT NULL`,
+      [userId],
+    );
+
+    const row = result.rows[0] ?? {
+      task_count: 0,
+      total_input_tokens: 0,
+      total_output_tokens: 0,
+      total_spent_usd: 0,
+    };
+
+    const baseline_spent_usd = calcBaselineCost(
+      Number(row.total_input_tokens),
+      Number(row.total_output_tokens),
+    );
+    const saved_usd = Math.max(0, baseline_spent_usd - Number(row.total_spent_usd));
+    const saved_percent =
+      baseline_spent_usd > 0
+        ? Math.round((saved_usd / baseline_spent_usd) * 100)
+        : 0;
+
+    return {
+      total_spent_usd: Number(row.total_spent_usd),
+      baseline_spent_usd,
+      saved_usd,
+      saved_percent,
+      task_count: row.task_count,
+      period_days: 30,
+    };
+  },
 };
 
 // ── Feedback Events ───────────────────────────────────────────────────────────
