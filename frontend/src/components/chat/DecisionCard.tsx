@@ -13,55 +13,124 @@ export function DecisionCard({ decision }: DecisionCardProps) {
   const isFast = routing?.selected_role === "fast";
 
   return (
-    <div className="mt-2 border border-gray-200 rounded-lg overflow-hidden text-xs">
-      <button onClick={() => setExpanded(!expanded)} className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 hover:bg-gray-100 transition-colors">
-        <div className="flex items-center gap-2">
-          <span className="text-gray-400">🔍</span>
-          <Badge variant={isFast ? "fast" : "slow"}>{isFast ? "⚡ 快模型" : "🧠 慢模型"}</Badge>
-          <span className="text-gray-500">{formatTokens((execution?.input_tokens || 0) + (execution?.output_tokens || 0))} tokens</span>
-          <span className="text-gray-500">{formatCost(execution?.total_cost_usd || 0)}</span>
+    <div
+      className="mt-2 rounded-xl overflow-hidden text-xs transition-all"
+      style={{
+        border: "1px solid var(--border-default)",
+        backgroundColor: "var(--bg-surface)",
+      }}
+    >
+      {/* Header — always visible */}
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center justify-between px-3 py-2 transition-colors"
+        style={{ backgroundColor: "var(--bg-elevated)" }}
+      >
+        <div className="flex items-center gap-2 flex-wrap">
+          <span style={{ color: "var(--text-muted)" }}>🔍</span>
+          <Badge variant={isFast ? "fast" : "slow"}>
+            {isFast ? "⚡ 快模型" : "🧠 慢模型"}
+          </Badge>
+          <span style={{ color: "var(--text-secondary)" }}>
+            {formatTokens((execution?.input_tokens || 0) + (execution?.output_tokens || 0))} tokens
+          </span>
+          <span style={{ color: "var(--accent-green)" }}>
+            {formatCost(execution?.total_cost_usd || 0)}
+          </span>
           {execution?.did_fallback && <Badge variant="warn">🔄 已升级</Badge>}
         </div>
-        <span className="text-gray-400">{expanded ? "▲" : "▼"}</span>
+        <span className="text-xs flex-shrink-0 ml-2" style={{ color: "var(--text-muted)" }}>
+          {expanded ? "▲" : "▼"}
+        </span>
       </button>
+
+      {/* Expanded content */}
       {expanded && (
-        <div className="px-3 py-3 space-y-3 bg-white">
+        <div className="px-3 py-3 space-y-3" style={{ backgroundColor: "var(--bg-surface)" }}>
+          {/* Routing scores */}
           <div>
-            <div className="text-gray-500 mb-1 font-medium">📊 路由决策</div>
+            <div className="text-[10px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: "var(--text-muted)" }}>
+              📊 路由决策
+            </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <div className="flex justify-between text-gray-600"><span>快模型</span><span>{Math.round((routing?.scores?.fast || 0) * 100)}%</span></div>
-                <Progress value={(routing?.scores?.fast || 0) * 100} color="bg-fast" />
+                <div className="flex justify-between mb-0.5" style={{ color: "var(--text-secondary)" }}>
+                  <span className="text-[10px]">快模型</span>
+                  <span className="text-[10px] font-mono" style={{ color: "var(--accent-green)" }}>
+                    {Math.round((routing?.scores?.fast || 0) * 100)}%
+                  </span>
+                </div>
+                <Progress value={(routing?.scores?.fast || 0) * 100} color="bg-accent-green" />
               </div>
               <div>
-                <div className="flex justify-between text-gray-600"><span>慢模型</span><span>{Math.round((routing?.scores?.slow || 0) * 100)}%</span></div>
-                <Progress value={(routing?.scores?.slow || 0) * 100} color="bg-slow" />
+                <div className="flex justify-between mb-0.5" style={{ color: "var(--text-secondary)" }}>
+                  <span className="text-[10px]">慢模型</span>
+                  <span className="text-[10px] font-mono" style={{ color: "var(--accent-purple)" }}>
+                    {Math.round((routing?.scores?.slow || 0) * 100)}%
+                  </span>
+                </div>
+                <Progress value={(routing?.scores?.slow || 0) * 100} color="bg-accent-purple" />
               </div>
             </div>
-            <div className="mt-1 text-gray-500">置信度: <span className="font-mono">{Math.round((routing?.confidence || 0) * 100)}%</span> · {routing?.selection_reason}</div>
-          </div>
-          <div>
-            <div className="text-gray-500 mb-1 font-medium">📦 Token 使用</div>
-            <div className="grid grid-cols-3 gap-2 text-center">
-              <div className="bg-gray-50 rounded p-2"><div className="text-gray-400">输入</div><div className="font-mono font-bold">{formatTokens(execution?.input_tokens || 0)}</div></div>
-              <div className="bg-gray-50 rounded p-2"><div className="text-gray-400">输出</div><div className="font-mono font-bold">{formatTokens(execution?.output_tokens || 0)}</div></div>
-              <div className="bg-gray-50 rounded p-2"><div className="text-gray-400">费用</div><div className="font-mono font-bold text-fast">{formatCost(execution?.total_cost_usd || 0)}</div></div>
+            <div className="mt-1 text-[10px]" style={{ color: "var(--text-muted)" }}>
+              置信度: <span className="font-mono" style={{ color: "var(--text-accent)" }}>{Math.round((routing?.confidence || 0) * 100)}%</span>
+              {routing?.selection_reason && (
+                <span className="ml-2">{routing.selection_reason}</span>
+              )}
             </div>
           </div>
+
+          {/* Token usage */}
+          <div>
+            <div className="text-[10px] font-semibold uppercase tracking-wide mb-1.5" style={{ color: "var(--text-muted)" }}>
+              📦 Token 使用
+            </div>
+            <div className="grid grid-cols-3 gap-1.5 text-center">
+              {[
+                { label: "输入", value: formatTokens(execution?.input_tokens || 0), color: "var(--text-accent)" },
+                { label: "输出", value: formatTokens(execution?.output_tokens || 0), color: "var(--accent-purple)" },
+                { label: "费用", value: formatCost(execution?.total_cost_usd || 0), color: "var(--accent-green)" },
+              ].map(({ label, value, color }) => (
+                <div
+                  key={label}
+                  className="rounded-lg px-2 py-1.5"
+                  style={{ backgroundColor: "var(--bg-elevated)" }}
+                >
+                  <div className="text-[9px] mb-0.5" style={{ color: "var(--text-muted)" }}>{label}</div>
+                  <div className="font-mono font-bold text-xs" style={{ color }}>{value}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Context compression */}
           {context?.compression_ratio > 0 && (
             <div>
-              <div className="text-gray-500 mb-1 font-medium">🗜️ 上下文压缩</div>
+              <div className="text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: "var(--text-muted)" }}>
+                🗜️ 上下文压缩
+              </div>
               <div className="flex items-center gap-2">
-                <span className="text-gray-600">{formatTokens(context.original_tokens)}</span>
-                <span className="text-gray-400">→</span>
-                <span className="text-fast font-bold">{formatTokens(context.compressed_tokens)}</span>
-                <Badge variant="fast">省 {Math.round(context.compression_ratio * 100)}%</Badge>
+                <span className="text-xs font-mono" style={{ color: "var(--text-muted)" }}>
+                  {formatTokens(context.original_tokens)}
+                </span>
+                <span style={{ color: "var(--text-muted)" }}>→</span>
+                <span className="text-xs font-mono font-bold" style={{ color: "var(--accent-green)" }}>
+                  {formatTokens(context.compressed_tokens)}
+                </span>
+                <Badge variant="fast">
+                  省 {Math.round(context.compression_ratio * 100)}%
+                </Badge>
               </div>
             </div>
           )}
-          <div className="flex items-center gap-4 text-gray-500">
+
+          {/* Footer metadata */}
+          <div
+            className="flex items-center gap-3 text-[10px] pt-0.5"
+            style={{ color: "var(--text-muted)", borderTop: "1px solid var(--border-subtle)" }}
+          >
             <span>⏱️ {execution?.latency_ms}ms</span>
-            <span>🤖 {execution?.model_used}</span>
+            <span className="font-mono truncate max-w-[120px]">{execution?.model_used}</span>
           </div>
         </div>
       )}

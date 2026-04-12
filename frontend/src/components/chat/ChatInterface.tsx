@@ -5,15 +5,27 @@ import { MessageBubble } from "./MessageBubble";
 import { ModelSwitchAnim } from "./ModelSwitchAnim";
 import { getApiConfig } from "@/lib/api";
 
-interface Message { id: string; role: "user" | "assistant"; content: string; decision?: any; streaming?: boolean; }
-const USER_ID = "user-001";
-
-interface ChatInterfaceProps {
-  /** Callback when the backend returns a task_id (T1: enables workbench panel binding) */
-  onTaskIdChange?: (taskId: string) => void;
+interface Message {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  decision?: any;
+  streaming?: boolean;
 }
 
-export function ChatInterface({ onTaskIdChange }: ChatInterfaceProps) {
+interface ChatInterfaceProps {
+  onTaskIdChange?: (taskId: string) => void;
+  userId?: string;
+}
+
+const QUICK_PROMPTS = [
+  { label: "💡 解释量子计算", text: "解释量子计算的基本原理" },
+  { label: "🔍 分析市场趋势", text: "分析一下当前AI行业的发展趋势" },
+  { label: "💻 写一个排序算法", text: "用Python写一个快速排序算法" },
+];
+
+export function ChatInterface({ onTaskIdChange, userId: propUserId }: ChatInterfaceProps) {
+  const userId = propUserId ?? "dev-user";
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -21,13 +33,14 @@ export function ChatInterface({ onTaskIdChange }: ChatInterfaceProps) {
   const [showFallbackAnim, setShowFallbackAnim] = useState<{ fromModel: string; toModel: string; reason: string } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, loading]);
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, loading]);
 
-  /** SSE streaming send — returns true if stream succeeded */
   const sendStreaming = async (text: string, history: any[]): Promise<boolean> => {
     const { apiBase, apiKey, fastModel, slowModel } = getApiConfig();
     const body: Record<string, any> = {
-      user_id: USER_ID,
+      user_id: userId,
       session_id: sessionId,
       message: text,
       history,
@@ -41,16 +54,15 @@ export function ChatInterface({ onTaskIdChange }: ChatInterfaceProps) {
     try {
       response = await fetch(`${apiBase}/api/chat`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-User-Id": USER_ID },
+        headers: { "Content-Type": "application/json", "X-User-Id": userId },
         body: JSON.stringify(body),
       });
     } catch {
-      return false; // network error → fallback
+      return false;
     }
 
     if (!response.ok || !response.body) return false;
 
-    // Create a placeholder streaming message
     const placeholderId = uuid();
     setMessages((prev) => [...prev, { id: placeholderId, role: "assistant", content: "", streaming: true }]);
 
@@ -81,7 +93,6 @@ export function ChatInterface({ onTaskIdChange }: ChatInterfaceProps) {
             );
           } else if (data.type === "done") {
             if (data.task_id) onTaskIdChange?.(data.task_id);
-            // Mark streaming complete, attach partial decision info
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === placeholderId ? { ...m, streaming: false, decision: data.decision } : m
@@ -90,14 +101,15 @@ export function ChatInterface({ onTaskIdChange }: ChatInterfaceProps) {
           } else if (data.type === "error") {
             setMessages((prev) =>
               prev.map((m) =>
-                m.id === placeholderId ? { ...m, content: `⚠️ 流式错误：${data.message}`, streaming: false } : m
+                m.id === placeholderId
+                  ? { ...m, content: `⚠️ 流式错误：${data.message}`, streaming: false }
+                  : m
               )
             );
           }
         }
       }
     } catch {
-      // stream read failed — mark incomplete
       setMessages((prev) =>
         prev.map((m) => (m.id === placeholderId ? { ...m, streaming: false } : m))
       );
@@ -107,11 +119,10 @@ export function ChatInterface({ onTaskIdChange }: ChatInterfaceProps) {
     return true;
   };
 
-  /** Non-streaming fallback */
   const sendFallback = async (text: string, history: any[]) => {
     const { apiBase, apiKey, fastModel, slowModel } = getApiConfig();
     const body: Record<string, any> = {
-      user_id: USER_ID,
+      user_id: userId,
       session_id: sessionId,
       message: text,
       history,
@@ -122,7 +133,7 @@ export function ChatInterface({ onTaskIdChange }: ChatInterfaceProps) {
 
     const res = await fetch(`${apiBase}/api/chat`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "X-User-Id": USER_ID },
+      headers: { "Content-Type": "application/json", "X-User-Id": userId },
       body: JSON.stringify(body),
     });
     const data = await res.json();
@@ -142,12 +153,15 @@ export function ChatInterface({ onTaskIdChange }: ChatInterfaceProps) {
 
       const streamed = await sendStreaming(text, history);
       if (!streamed) {
-        // Fallback to non-streaming
         const data = await sendFallback(text, history);
         if (data.task_id) onTaskIdChange?.(data.task_id);
         const replyContent = data.message || "⚠️ 收到空响应，请检查后端日志。";
         if (data.decision?.execution?.did_fallback) {
-          setShowFallbackAnim({ fromModel: data.decision.routing.selected_model, toModel: data.decision.execution.model_used, reason: data.decision.execution.fallback_reason || "质量不达标" });
+          setShowFallbackAnim({
+            fromModel: data.decision.routing.selected_model,
+            toModel: data.decision.execution.model_used,
+            reason: data.decision.execution.fallback_reason || "质量不达标",
+          });
           setTimeout(() => {
             setMessages((prev) => [...prev, { id: uuid(), role: "assistant", content: replyContent, decision: data.decision }]);
             setShowFallbackAnim(null);
@@ -157,65 +171,207 @@ export function ChatInterface({ onTaskIdChange }: ChatInterfaceProps) {
         }
       }
     } catch (err: any) {
-      setMessages((prev) => [...prev, { id: uuid(), role: "assistant", content: `⚠️ 请求失败：${err?.message || "请检查API配置或点击右上角设置。"}` }]);
+      setMessages((prev) => [
+        ...prev,
+        { id: uuid(), role: "assistant", content: `⚠️ 请求失败：${err?.message || "请检查API配置或点击右上角设置。"}` },
+      ]);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } };
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
 
-  // Whether any message is currently streaming
   const isStreaming = messages.some((m) => m.streaming);
 
   return (
     <div className="flex flex-col h-full">
+      {/* Message area */}
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-1">
+        {/* Empty state */}
         {messages.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full text-center text-gray-400 space-y-3">
-            <div className="text-5xl">🚀</div>
-            <div className="text-lg font-medium text-gray-600">SmartRouter Pro</div>
-            <div className="text-sm max-w-xs">透明的、会成长的AI智能运行时。<br />每次回答都能看到模型选择、Token消耗和决策理由。</div>
-            <div className="grid grid-cols-2 gap-2 mt-4 text-xs">
-              {["今天天气怎么样？", "帮我分析代码性能", "用Python写快速排序", "解释量子纠缠原理"].map((q) => (<button key={q} onClick={() => setInput(q)} className="bg-gray-100 hover:bg-gray-200 rounded-lg px-3 py-2 text-left transition-colors">{q}</button>))}
+          <div className="flex flex-col items-center justify-center h-full text-center animate-fade-in">
+            {/* Big logo */}
+            <div
+              className="text-5xl mb-4"
+              style={{
+                color: "var(--accent-blue)",
+                textShadow: "0 0 40px rgba(59,130,246,0.4)",
+              }}
+            >
+              ◈
             </div>
-            <div className="mt-4 p-3 bg-yellow-50 rounded-lg border border-yellow-200 text-xs text-yellow-700 max-w-sm">
-              💡 首次使用请点击右上角「设置」配置API地址
+            <div className="text-base font-semibold mb-1" style={{ color: "var(--text-primary)" }}>
+              SmartRouter Pro
+            </div>
+            <div className="text-xs mb-6 max-w-xs" style={{ color: "var(--text-muted)" }}>
+              你能看到它在思考，你能看到它在成长
+            </div>
+
+            {/* Quick prompt cards */}
+            <div className="grid grid-cols-1 gap-2 w-full max-w-sm">
+              {QUICK_PROMPTS.map((q, i) => (
+                <button
+                  key={i}
+                  onClick={() => setInput(q.text)}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-left text-xs transition-all animate-fade-in-up"
+                  style={{
+                    backgroundColor: "var(--bg-elevated)",
+                    border: "1px solid var(--border-default)",
+                    color: "var(--text-secondary)",
+                    animationDelay: `${i * 0.05}s`,
+                  }}
+                >
+                  <span>{q.label.split(" ")[0]}</span>
+                  <span>{q.label.split(" ").slice(1).join(" ")}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* Hint */}
+            <div
+              className="mt-4 px-3 py-2 rounded-lg text-[11px] max-w-sm"
+              style={{
+                backgroundColor: "rgba(245,158,11,0.08)",
+                border: "1px solid rgba(245,158,11,0.2)",
+                color: "var(--accent-amber)",
+              }}
+            >
+              💡 首次使用请点击右上角「Settings」配置 API 地址
             </div>
           </div>
         )}
+
+        {/* Messages */}
         {messages.map((msg) => (
-          <div key={msg.id}>
-            <MessageBubble role={msg.role} content={msg.content} decision={msg.decision} userId={USER_ID} />
-            {/* Streaming cursor */}
+          <div key={msg.id} className="animate-fade-in-up">
+            <MessageBubble
+              role={msg.role}
+              content={msg.content}
+              decision={msg.decision}
+              userId={userId}
+            />
+            {/* Streaming cursor — new design */}
             {msg.streaming && (
-              <div className="flex justify-start -mt-2 mb-2 pl-4">
-                <span className="inline-block w-2 h-4 bg-blue-500 rounded-sm animate-pulse ml-1" />
+              <div className="flex justify-start mb-2 pl-4">
+                <span
+                  className="text-sm font-mono animate-blink"
+                  style={{ color: "var(--accent-blue)" }}
+                >
+                  ▋
+                </span>
               </div>
             )}
           </div>
         ))}
-        {showFallbackAnim && <ModelSwitchAnim fromModel={showFallbackAnim.fromModel} toModel={showFallbackAnim.toModel} reason={showFallbackAnim.reason} onDone={() => {}} />}
-        {/* Loading dots only when NOT streaming (streaming shows cursor inline) */}
+
+        {/* Model switch animation */}
+        {showFallbackAnim && (
+          <ModelSwitchAnim
+            fromModel={showFallbackAnim.fromModel}
+            toModel={showFallbackAnim.toModel}
+            reason={showFallbackAnim.reason}
+            onDone={() => {}}
+          />
+        )}
+
+        {/* Loading dots (non-streaming) */}
         {loading && !isStreaming && !showFallbackAnim && (
-          <div className="flex justify-start mb-4">
-            <div className="bg-white border border-gray-200 rounded-2xl rounded-tl-sm px-4 py-3">
+          <div className="flex justify-start mb-4 animate-fade-in">
+            <div
+              className="px-4 py-3"
+              style={{
+                backgroundColor: "var(--bg-elevated)",
+                borderRadius: "4px 18px 18px 18px",
+              }}
+            >
               <div className="flex items-center gap-1">
-                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:0ms]" />
-                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:150ms]" />
-                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:300ms]" />
+                <div
+                  className="w-1.5 h-1.5 rounded-full animate-bounce"
+                  style={{ backgroundColor: "var(--text-muted)", animationDelay: "0ms" }}
+                />
+                <div
+                  className="w-1.5 h-1.5 rounded-full animate-bounce"
+                  style={{ backgroundColor: "var(--text-muted)", animationDelay: "150ms" }}
+                />
+                <div
+                  className="w-1.5 h-1.5 rounded-full animate-bounce"
+                  style={{ backgroundColor: "var(--text-muted)", animationDelay: "300ms" }}
+                />
               </div>
             </div>
           </div>
         )}
+
         <div ref={bottomRef} />
       </div>
-      <div className="border-t bg-white px-4 py-3">
-        <div className="flex items-end gap-2 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2">
-          <textarea value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown} placeholder="输入消息... (Enter发送)" className="flex-1 bg-transparent resize-none outline-none text-sm max-h-32 min-h-[24px]" rows={1} />
-          <button onClick={handleSend} disabled={!input.trim() || loading} className="bg-blue-500 hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg px-3 py-1.5 text-sm font-medium transition-colors">发送</button>
+
+      {/* Input area */}
+      <div
+        className="px-4 py-3 flex-shrink-0"
+        style={{ borderTop: "1px solid var(--border-subtle)" }}
+      >
+        <div className="flex items-end gap-2">
+          <div
+            className="flex-1 flex items-end gap-2 px-3 py-2.5 rounded-xl transition-all"
+            style={{
+              backgroundColor: "var(--bg-elevated)",
+              border: "1px solid var(--border-default)",
+            }}
+            onFocus={() => {
+              const el = document.activeElement?.closest(".flex.items-end.gap-2 > div");
+              if (el) {
+                (el as HTMLElement).style.borderColor = "var(--accent-blue)";
+                (el as HTMLElement).style.boxShadow = "var(--glow-blue)";
+              }
+            }}
+          >
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="输入消息... (Enter 发送)"
+              className="flex-1 resize-none outline-none text-sm max-h-32 min-h-[24px] leading-relaxed"
+              style={{
+                backgroundColor: "transparent",
+                color: "var(--text-primary)",
+              }}
+              rows={1}
+            />
+            {/* Character count */}
+            <span className="text-[10px] flex-shrink-0 pb-0.5" style={{ color: "var(--text-muted)" }}>
+              {input.length > 0 ? `${input.length}` : ""}
+            </span>
+          </div>
+
+          {/* Send button */}
+          <button
+            onClick={handleSend}
+            disabled={!input.trim() || loading}
+            className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-all disabled:opacity-30 disabled:cursor-not-allowed hover:shadow-glow-blue"
+            style={{
+              backgroundColor: "var(--accent-blue)",
+              color: "white",
+            }}
+            title="发送"
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d="M2 7L12 2L7.5 12L6.5 7.5L2 7Z" fill="currentColor" />
+            </svg>
+          </button>
         </div>
-        <div className="text-xs text-gray-400 mt-1 text-center">系统自动选择最优模型 · 每次决策完全透明</div>
+
+        {/* Footer hint */}
+        <div className="text-center mt-1.5">
+          <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+            系统自动选择最优模型 · 每次决策完全透明
+          </span>
+        </div>
       </div>
     </div>
   );

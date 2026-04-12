@@ -1,114 +1,125 @@
 "use client";
 import { useState } from "react";
-import Link from "next/link";
 import { ChatInterface } from "@/components/chat/ChatInterface";
 import { SettingsModal } from "@/components/chat/SettingsModal";
 import { TaskPanel } from "@/components/workbench/TaskPanel";
 import { EvidencePanel } from "@/components/workbench/EvidencePanel";
 import { TracePanel } from "@/components/workbench/TracePanel";
 import { HealthPanel } from "@/components/workbench/HealthPanel";
+import { DebugPanel } from "@/components/workbench/DebugPanel";
+import { Header } from "@/components/layout/Header";
+import { Sidebar } from "@/components/layout/Sidebar";
 
-const USER_ID = "user-001";
+const DEFAULT_USER_ID = "dev-user";
+
+type WorkbenchTab = "evidence" | "trace" | "health" | "debug";
 
 export default function HomePage() {
   const [showSettings, setShowSettings] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
-  const [workbenchTab, setWorkbenchTab] = useState<"evidence" | "trace" | "health">("evidence");
+  const [workbenchTab, setWorkbenchTab] = useState<WorkbenchTab>("evidence");
+  const [userId, setUserId] = useState(DEFAULT_USER_ID);
+  const [activeNav, setActiveNav] = useState("chat");
+
+  const tabs: { id: WorkbenchTab; icon: string; label: string }[] = [
+    { id: "evidence", icon: "🔍", label: "证据" },
+    { id: "trace", icon: "⚡", label: "轨迹" },
+    { id: "health", icon: "💚", label: "健康" },
+    { id: "debug", icon: "🔧", label: "调试" },
+  ];
 
   return (
-    <div className="flex flex-col h-screen bg-gray-50">
+    <div
+      className="flex flex-col h-screen overflow-hidden"
+      style={{ backgroundColor: "var(--bg-base)" }}
+    >
       {/* Header */}
-      <header className="bg-white border-b px-4 py-3 flex items-center justify-between flex-shrink-0 relative">
-        <div className="flex items-center gap-2">
-          <span className="text-xl">🚀</span>
-          <span className="font-bold text-gray-800">SmartRouter Pro</span>
-          <span className="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full">v1.0</span>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-gray-400">透明 · 可观测 · 会成长</span>
-          <button
-            onClick={() => setSidebarOpen((v) => !v)}
-            className={`text-sm px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 ${
-              sidebarOpen ? "bg-blue-100 text-blue-700" : "bg-gray-100 hover:bg-gray-200"
-            }`}
-          >
-            {sidebarOpen ? "◀ 隐藏工作台" : "▶ 显示工作台"}
-          </button>
-          <Link href="/dashboard" className="text-sm bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1">
-            📊 仪表盘
-          </Link>
-          <button
-            onClick={() => setShowSettings(true)}
-            className="text-sm bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1"
-          >
-            ⚙️ 设置
-          </button>
-        </div>
-      </header>
+      <Header
+        userId={userId}
+        onUserIdChange={setUserId}
+        sidebarOpen={sidebarOpen}
+        onToggleSidebar={() => setSidebarOpen((v) => !v)}
+      />
 
-      {/* Body: Chat + optional Workbench Sidebar */}
+      {/* Body: Sidebar + Chat + optional Workbench */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Left: Chat */}
-        <main className={`flex-1 overflow-hidden ${sidebarOpen ? "max-w-3xl" : ""} w-full mx-auto`}>
-          <ChatInterface onTaskIdChange={setSelectedTaskId} />
+        {/* Left: Sidebar */}
+        <Sidebar activeNav={activeNav} onNavChange={setActiveNav} />
+
+        {/* Center: Chat Area */}
+        <main
+          className="flex-1 overflow-hidden"
+          style={{ maxWidth: sidebarOpen ? undefined : "100%" }}
+        >
+          <ChatInterface
+            onTaskIdChange={setSelectedTaskId}
+            userId={userId}
+          />
         </main>
 
         {/* Right: Workbench Sidebar */}
         {sidebarOpen && (
-          <aside className="w-96 flex-shrink-0 border-l bg-white flex flex-col overflow-hidden">
-            {/* Task Panel: top half */}
-            <div className="h-64 flex-shrink-0 border-b overflow-hidden">
+          <aside
+            className="w-96 flex-shrink-0 flex flex-col overflow-hidden"
+            style={{
+              backgroundColor: "var(--bg-surface)",
+              borderLeft: "1px solid var(--border-subtle)",
+            }}
+          >
+            {/* Task Panel: top fixed height */}
+            <div
+              className="flex-shrink-0 overflow-hidden"
+              style={{ height: 220, borderBottom: "1px solid var(--border-subtle)" }}
+            >
               <TaskPanel
-                userId={USER_ID}
+                userId={userId}
                 onTaskSelect={setSelectedTaskId}
                 selectedTaskId={selectedTaskId}
               />
             </div>
 
-            {/* Evidence / Trace tab switcher: bottom half */}
-            <div className="flex-1 flex flex-col overflow-hidden">
+            {/* Tab content area: flex-1 */}
+            <div className="flex flex-col flex-1 overflow-hidden">
               {/* Tab bar */}
-              <div className="flex border-b bg-gray-50 flex-shrink-0">
-                <button
-                  onClick={() => setWorkbenchTab("evidence")}
-                  className={`flex-1 px-3 py-2 text-xs font-medium transition-colors ${
-                    workbenchTab === "evidence"
-                      ? "text-blue-600 border-b-2 border-blue-500 bg-white"
-                      : "text-gray-500 hover:text-gray-700"
-                  }`}
-                >
-                  🗂 证据
-                </button>
-                <button
-                  onClick={() => setWorkbenchTab("trace")}
-                  className={`flex-1 px-3 py-2 text-xs font-medium transition-colors ${
-                    workbenchTab === "trace"
-                      ? "text-blue-600 border-b-2 border-blue-500 bg-white"
-                      : "text-gray-500 hover:text-gray-700"
-                  }`}
-                >
-                  📡 轨迹
-                </button>
-                <button
-                  onClick={() => setWorkbenchTab("health")}
-                  className={`flex-1 px-3 py-2 text-xs font-medium transition-colors ${
-                    workbenchTab === "health"
-                      ? "text-blue-600 border-b-2 border-blue-500 bg-white"
-                      : "text-gray-500 hover:text-gray-700"
-                  }`}
-                >
-                  💚 健康
-                </button>
+              <div
+                className="flex flex-shrink-0"
+                style={{ borderBottom: "1px solid var(--border-subtle)" }}
+              >
+                {tabs.map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setWorkbenchTab(tab.id)}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs transition-all relative"
+                    style={{
+                      color: workbenchTab === tab.id ? "var(--text-accent)" : "var(--text-muted)",
+                      backgroundColor: workbenchTab === tab.id ? "var(--bg-overlay)" : "transparent",
+                    }}
+                  >
+                    <span className="text-[11px]">{tab.icon}</span>
+                    <span className="hidden xl:inline">{tab.label}</span>
+                    {/* Active underline */}
+                    {workbenchTab === tab.id && (
+                      <span
+                        className="absolute bottom-0 left-2 right-2 h-0.5 rounded-full"
+                        style={{ backgroundColor: "var(--accent-blue)" }}
+                      />
+                    )}
+                  </button>
+                ))}
               </div>
+
               {/* Tab content */}
               <div className="flex-1 overflow-hidden">
-                {workbenchTab === "evidence" ? (
-                  <EvidencePanel taskId={selectedTaskId} userId={USER_ID} />
-                ) : workbenchTab === "trace" ? (
-                  <TracePanel taskId={selectedTaskId} userId={USER_ID} />
-                ) : (
-                  <HealthPanel />
+                {workbenchTab === "evidence" && (
+                  <EvidencePanel taskId={selectedTaskId} userId={userId} />
+                )}
+                {workbenchTab === "trace" && (
+                  <TracePanel taskId={selectedTaskId} userId={userId} />
+                )}
+                {workbenchTab === "health" && <HealthPanel />}
+                {workbenchTab === "debug" && (
+                  <DebugPanel taskId={selectedTaskId} userId={userId} />
                 )}
               </div>
             </div>

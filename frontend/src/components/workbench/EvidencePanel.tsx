@@ -16,10 +16,10 @@ interface EvidencePanelProps {
   userId: string;
 }
 
-const SOURCE_LABELS: Record<string, string> = {
-  web_search: "🔍 搜索",
-  http_request: "🌐 HTTP",
-  manual: "✍️ 手动",
+const SOURCE_CONFIG: Record<string, { icon: string; label: string; bg: string; color: string }> = {
+  web_search: { icon: "🔍", label: "搜索", bg: "rgba(59,130,246,0.1)", color: "var(--text-accent)" },
+  http_request: { icon: "🌐", label: "HTTP", bg: "rgba(139,92,246,0.1)", color: "var(--accent-purple)" },
+  manual: { icon: "✍️", label: "手动", bg: "rgba(16,185,129,0.1)", color: "var(--accent-green)" },
 };
 
 export function EvidencePanel({ taskId, userId }: EvidencePanelProps) {
@@ -37,66 +37,97 @@ export function EvidencePanel({ taskId, userId }: EvidencePanelProps) {
       .finally(() => setLoading(false));
   }, [taskId, userId]);
 
+  const renderContent = () => (
+    <>
+      <div
+        className="px-3 py-2 flex-shrink-0 flex items-center justify-between"
+        style={{ borderBottom: "1px solid var(--border-subtle)" }}
+      >
+        <div className="flex items-center gap-2">
+          <span className="text-xs">🔍</span>
+          <span className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>证据</span>
+        </div>
+        <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>{evidences.length} 条</span>
+      </div>
+
+      <div className="flex-1 overflow-y-auto">
+        {loading && <div className="p-4 text-xs text-center animate-pulse" style={{ color: "var(--text-muted)" }}>加载中…</div>}
+        {error && (
+          <div className="mx-3 my-2 px-3 py-2 rounded-lg text-xs" style={{ backgroundColor: "rgba(239,68,68,0.1)", color: "var(--accent-red)" }}>
+            ⚠️ {error}
+          </div>
+        )}
+        {!loading && !error && evidences.length === 0 && (
+          <div className="flex flex-col items-center justify-center h-full gap-1">
+            <span className="text-xl">🔍</span>
+            <span className="text-xs" style={{ color: "var(--text-muted)" }}>此任务暂无证据记录</span>
+          </div>
+        )}
+        {evidences.map((ev) => {
+          const cfg = SOURCE_CONFIG[ev.source] ?? SOURCE_CONFIG.manual;
+          return (
+            <div
+              key={ev.evidence_id}
+              className="px-3 py-2.5 transition-colors"
+              style={{ borderBottom: "1px solid var(--border-subtle)" }}
+            >
+              <div className="flex items-center gap-2 mb-1.5">
+                <span
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium"
+                  style={{ backgroundColor: cfg.bg, color: cfg.color }}
+                >
+                  {cfg.icon} {cfg.label}
+                </span>
+                {ev.relevance_score !== null && (
+                  <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+                    相关度: {(ev.relevance_score * 100).toFixed(0)}%
+                  </span>
+                )}
+                <span className="text-[10px] ml-auto" style={{ color: "var(--text-muted)" }}>
+                  {new Date(ev.created_at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}
+                </span>
+              </div>
+              <p
+                className="text-xs line-clamp-4 leading-relaxed"
+                style={{ color: "var(--text-secondary)" }}
+              >
+                {ev.content.length > 200 ? ev.content.slice(0, 200) + "…" : ev.content}
+              </p>
+              {ev.source_metadata && Boolean(ev.source_metadata.url) && (
+                <a
+                  href={String(ev.source_metadata.url)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[10px] mt-1.5 block truncate"
+                  style={{ color: "var(--text-accent)" }}
+                >
+                  {String(ev.source_metadata.url)}
+                </a>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+
   if (!taskId) {
     return (
       <div className="flex flex-col h-full">
-        <div className="px-3 py-2 border-b bg-gray-50 flex-shrink-0">
-          <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">🗂️ 证据</span>
+        <div
+          className="px-3 py-2 flex-shrink-0 flex items-center gap-2"
+          style={{ borderBottom: "1px solid var(--border-subtle)" }}
+        >
+          <span className="text-xs">🔍</span>
+          <span className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>证据</span>
         </div>
-        <div className="flex-1 flex items-center justify-center">
-          <span className="text-xs text-gray-400">先选择一个任务</span>
+        <div className="flex-1 flex flex-col items-center justify-center gap-1">
+          <span className="text-xl">🔍</span>
+          <span className="text-xs" style={{ color: "var(--text-muted)" }}>先选择一个任务</span>
         </div>
       </div>
     );
   }
 
-  return (
-    <div className="flex flex-col h-full">
-      <div className="px-3 py-2 border-b bg-gray-50 flex-shrink-0 flex justify-between items-center">
-        <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">🗂️ 证据</span>
-        <span className="text-xs text-gray-400">{evidences.length} 条</span>
-      </div>
-      <div className="flex-1 overflow-y-auto">
-        {loading && <div className="p-4 text-xs text-gray-400 text-center">加载中...</div>}
-        {error && <div className="p-3 text-xs text-red-500">⚠️ {error}</div>}
-        {!loading && !error && evidences.length === 0 && (
-          <div className="p-4 text-xs text-gray-400 text-center">此任务暂无证据记录</div>
-        )}
-        {evidences.map((ev) => (
-          <div key={ev.evidence_id} className="px-3 py-2 border-b border-gray-100">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded">
-                {SOURCE_LABELS[ev.source] ?? ev.source}
-              </span>
-              {ev.relevance_score !== null && (
-                <span className="text-[10px] text-gray-400">
-                  相关度: {(ev.relevance_score * 100).toFixed(0)}%
-                </span>
-              )}
-              <span className="text-[10px] text-gray-400 ml-auto">
-                {new Date(ev.created_at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}
-              </span>
-            </div>
-            <p className="text-xs text-gray-700 line-clamp-4 leading-relaxed">
-              {ev.content.length > 200 ? ev.content.slice(0, 200) + "…" : ev.content}
-            </p>
-            {ev.source_metadata && (
-              <div className="mt-1 flex gap-2">
-                {Boolean(ev.source_metadata.url) && (
-                  <a
-                    href={ev.source_metadata.url as string}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[10px] text-blue-500 hover:underline truncate max-w-[160px]"
-                  >
-                    {String(ev.source_metadata.url)}
-                  </a>
-                )}
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+  return <div className="flex flex-col h-full">{renderContent()}</div>;
 }

@@ -1,0 +1,137 @@
+"use client";
+import { useState, useEffect } from "react";
+import { fetchHealth } from "@/lib/api";
+import type { HealthStatus } from "@/lib/api";
+
+interface HeaderProps {
+  userId: string;
+  onUserIdChange: (id: string) => void;
+  sidebarOpen: boolean;
+  onToggleSidebar: () => void;
+}
+
+export function Header({ userId, onUserIdChange, sidebarOpen, onToggleSidebar }: HeaderProps) {
+  const [health, setHealth] = useState<HealthStatus | null>(null);
+  const [editingUser, setEditingUser] = useState(false);
+  const [userInput, setUserInput] = useState(userId);
+
+  useEffect(() => {
+    fetchHealth()
+      .then(setHealth)
+      .catch(() => {/* silent */});
+  }, []);
+
+  const statusDot = health
+    ? health.status === "ok"
+      ? { color: "bg-accent-green animate-pulse-dot", label: "运行正常" }
+      : health.status === "degraded"
+      ? { color: "bg-accent-amber", label: "部分降级" }
+      : { color: "bg-accent-red", label: "异常" }
+    : { color: "bg-text-muted", label: "检测中…" };
+
+  const handleUserSave = () => {
+    const trimmed = userInput.trim();
+    if (trimmed) {
+      onUserIdChange(trimmed);
+    }
+    setEditingUser(false);
+  };
+
+  return (
+    <header
+      className="h-12 flex-shrink-0 flex items-center justify-between px-4 border-b"
+      style={{
+        backgroundColor: "var(--bg-surface)",
+        borderColor: "var(--border-subtle)",
+        backdropFilter: "blur(8px)",
+      }}
+    >
+      {/* Left: Logo */}
+      <div className="flex items-center gap-2">
+        <span className="text-base" style={{ color: "var(--accent-blue)" }}>◈</span>
+        <span className="font-semibold text-sm tracking-tight" style={{ color: "var(--text-primary)" }}>
+          SmartRouter Pro
+        </span>
+        <span
+          className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+          style={{
+            backgroundColor: "var(--accent-blue-glow)",
+            color: "var(--text-accent)",
+          }}
+        >
+          v1.0
+        </span>
+      </div>
+
+      {/* Center: Status badge */}
+      <div className="flex items-center gap-2">
+        <span className={`status-dot ${statusDot.color}`} />
+        <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
+          {statusDot.label}
+        </span>
+        {health?.version && (
+          <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+            · {health.version}
+          </span>
+        )}
+      </div>
+
+      {/* Right: User + Sidebar toggle */}
+      <div className="flex items-center gap-2">
+        {/* Sidebar toggle */}
+        <button
+          onClick={onToggleSidebar}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs transition-all"
+          style={{
+            backgroundColor: sidebarOpen ? "var(--bg-overlay)" : "transparent",
+            color: sidebarOpen ? "var(--text-primary)" : "var(--text-muted)",
+          }}
+          title={sidebarOpen ? "隐藏工作台" : "显示工作台"}
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <rect x="1" y="2" width="12" height="1.5" rx="0.75" fill="currentColor" />
+            <rect x="1" y="6.25" width="8" height="1.5" rx="0.75" fill="currentColor" />
+            <rect x="1" y="10.5" width="10" height="1.5" rx="0.75" fill="currentColor" />
+          </svg>
+        </button>
+
+        {/* User ID */}
+        {editingUser ? (
+          <div className="flex items-center gap-1">
+            <input
+              autoFocus
+              value={userInput}
+              onChange={(e) => setUserInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleUserSave();
+                if (e.key === "Escape") setEditingUser(false);
+              }}
+              className="w-28 px-2 py-1 rounded text-xs outline-none"
+              style={{
+                backgroundColor: "var(--bg-elevated)",
+                border: "1px solid var(--accent-blue)",
+                color: "var(--text-primary)",
+              }}
+            />
+            <button onClick={handleUserSave} className="text-xs px-1.5 py-1 rounded" style={{ color: "var(--accent-blue)" }}>
+              ✓
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => { setUserInput(userId); setEditingUser(true); }}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs transition-all hover:bg-bg-elevated"
+            style={{ color: "var(--text-secondary)" }}
+            title="点击修改用户ID"
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <circle cx="7" cy="5" r="2.5" stroke="currentColor" strokeWidth="1.5" />
+              <path d="M2 12c0-2.761 2.239-5 5-5s5 2.239 5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+            <span className="max-w-[80px] truncate">{userId}</span>
+          </button>
+        )}
+      </div>
+    </header>
+  );
+}
