@@ -144,3 +144,31 @@ export async function fetchHealth(): Promise<HealthStatus> {
   if (!res.ok) throw new Error(`加载健康状态失败 (${res.status})`);
   return res.json();
 }
+
+// Memory API helpers
+export interface MemoryEntry {
+  id: string;
+  category: string;
+  content: string;
+  source: string | null;
+  created_at: string;
+}
+
+export async function fetchMemory(userId: string, category?: string): Promise<{ memories: MemoryEntry[] }> {
+  const { apiBase } = getApiConfig();
+  const url = category
+    ? `${apiBase}/v1/memory?category=${encodeURIComponent(category)}`
+    : `${apiBase}/v1/memory`;
+  const res = await fetch(url, { headers: { "X-User-Id": userId } });
+  if (!res.ok) throw new Error(`加载记忆列表失败 (${res.status})`);
+  return res.json();
+}
+
+export async function deleteMemory(id: string, userId: string): Promise<void> {
+  const { apiBase } = getApiConfig();
+  const res = await fetch(`${apiBase}/v1/memory/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    headers: { "X-User-Id": userId },
+  });
+  if (!res.ok) throw new Error(`删除记忆失败 (${res.status})`);
+}

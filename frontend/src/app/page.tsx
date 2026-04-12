@@ -9,6 +9,8 @@ import { HealthPanel } from "@/components/workbench/HealthPanel";
 import { DebugPanel } from "@/components/workbench/DebugPanel";
 import { Header } from "@/components/layout/Header";
 import { Sidebar } from "@/components/layout/Sidebar";
+import MemoryView from "@/components/views/MemoryView";
+import DashboardView from "@/components/views/DashboardView";
 
 type NavView = "chat" | "tasks" | "memory" | "dashboard";
 
@@ -79,64 +81,11 @@ export default function HomePage() {
           )}
 
           {activeNav === "memory" && (
-            <div className="h-full flex flex-col items-center justify-center" style={{ backgroundColor: "var(--bg-base)" }}>
-              <div className="text-center">
-                <div className="text-4xl mb-4">🧠</div>
-                <div className="text-base font-semibold mb-2" style={{ color: "var(--text-primary)" }}>
-                  记忆系统
-                </div>
-                <div className="text-sm" style={{ color: "var(--text-muted)" }}>
-                  SmartRouter 的长期学习记忆
-                </div>
-                <div className="mt-3 space-y-2 text-xs" style={{ color: "var(--text-muted)" }}>
-                  <div className="flex items-center gap-2 justify-center">
-                    <span style={{ color: "var(--accent-blue)" }}>●</span>
-                    <span>决策偏好学习</span>
-                  </div>
-                  <div className="flex items-center gap-2 justify-center">
-                    <span style={{ color: "var(--accent-green)" }}>●</span>
-                    <span>模型性能统计</span>
-                  </div>
-                  <div className="flex items-center gap-2 justify-center">
-                    <span style={{ color: "var(--accent-amber)" }}>●</span>
-                    <span>信号质量追踪</span>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <MemoryView userId={userId} />
           )}
 
           {activeNav === "dashboard" && (
-            <div className="h-full flex flex-col items-center justify-center" style={{ backgroundColor: "var(--bg-base)" }}>
-              <div className="text-center">
-                <div className="text-4xl mb-4">📊</div>
-                <div className="text-base font-semibold mb-2" style={{ color: "var(--text-primary)" }}>
-                  数据看板
-                </div>
-                <div className="text-sm mb-4" style={{ color: "var(--text-muted)" }}>
-                  系统运行统计总览
-                </div>
-                <div className="grid grid-cols-3 gap-3 px-8">
-                  {[
-                    { label: "总决策数", value: "—", color: "var(--accent-blue)" },
-                    { label: "成功率", value: "—", color: "var(--accent-green)" },
-                    { label: "Token 节省", value: "—", color: "var(--accent-amber)" },
-                  ].map((card) => (
-                    <div
-                      key={card.label}
-                      className="px-4 py-3 rounded-xl text-center"
-                      style={{ backgroundColor: "var(--bg-elevated)", border: "1px solid var(--border-subtle)" }}
-                    >
-                      <div className="text-lg font-bold" style={{ color: card.color }}>{card.value}</div>
-                      <div className="text-[10px] mt-0.5" style={{ color: "var(--text-muted)" }}>{card.label}</div>
-                    </div>
-                  ))}
-                </div>
-                <div className="text-xs mt-4" style={{ color: "var(--text-muted)" }}>
-                  发送消息后统计数据将实时更新
-                </div>
-              </div>
-            </div>
+            <DashboardView userId={userId} />
           )}
         </main>
 
