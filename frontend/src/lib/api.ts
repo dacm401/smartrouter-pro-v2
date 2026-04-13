@@ -152,16 +152,17 @@ export interface MemoryEntry {
   content: string;
   source: string | null;
   created_at: string;
+  relevance_score?: number;
 }
 
-export async function fetchMemory(userId: string, category?: string): Promise<{ memories: MemoryEntry[] }> {
+export async function fetchMemory(userId: string, category?: string): Promise<{ entries: MemoryEntry[] }> {
   const { apiBase } = getApiConfig();
   const url = category
     ? `${apiBase}/v1/memory?category=${encodeURIComponent(category)}`
     : `${apiBase}/v1/memory`;
   const res = await fetch(url, { headers: { "X-User-Id": userId } });
   if (!res.ok) throw new Error(`加载记忆列表失败 (${res.status})`);
-  return res.json();
+  return res.json() as Promise<{ entries: MemoryEntry[] }>;
 }
 
 export async function deleteMemory(id: string, userId: string): Promise<void> {
@@ -171,6 +172,26 @@ export async function deleteMemory(id: string, userId: string): Promise<void> {
     headers: { "X-User-Id": userId },
   });
   if (!res.ok) throw new Error(`删除记忆失败 (${res.status})`);
+}
+
+export async function createMemoryEntry(
+  userId: string,
+  category: string,
+  content: string,
+  source: string = "manual"
+): Promise<MemoryEntry> {
+  const { apiBase } = getApiConfig();
+  const res = await fetch(`${apiBase}/v1/memory`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-User-Id": userId },
+    body: JSON.stringify({ category, content, source }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+    throw new Error(err.error ?? `添加记忆失败 (${res.status})`);
+  }
+  const data = await res.json();
+  return data.entry as MemoryEntry;
 }
 
 export async function fetchDecision(taskId: string, userId: string) {

@@ -552,9 +552,11 @@ export const GrowthRepo = {
 export const MemoryEntryRepo = {
   async create(data: MemoryEntryInput): Promise<MemoryEntry> {
     const id = uuid();
+    // M2: default relevance_score based on source (manual=0.5, auto_learn=0.3)
+    const relevanceScore = data.relevance_score ?? (data.source === "auto_learn" ? 0.3 : 0.5);
     const result = await query(
-      `INSERT INTO memory_entries (id, user_id, category, content, importance, tags, source)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO memory_entries (id, user_id, category, content, importance, tags, source, relevance_score)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING *`,
       [
         id,
@@ -564,9 +566,26 @@ export const MemoryEntryRepo = {
         data.importance ?? 3,
         data.tags ?? [],
         data.source ?? "manual",
+        relevanceScore,
       ]
     );
     return mapMemoryRow(result.rows[0]);
+  },
+
+  /**
+   * M2: Boost relevance_score for recent auto_learn entries when positive feedback received.
+   * Increases score by 0.3 (capped at 1.0) for entries within the time window.
+   */
+  async boostRecentAutoLearn(userId: string, windowMs: number = 300_000): Promise<void> {
+    const since = new Date(Date.now() - windowMs).toISOString();
+    await query(
+      `UPDATE memory_entries
+       SET relevance_score = LEAST(relevance_score + 0.3, 1.0)
+       WHERE user_id = $1
+         AND source = 'auto_learn'
+         AND created_at > $2`,
+      [userId, since]
+    );
   },
 
   async getById(id: string, userId: string): Promise<MemoryEntry | null> {
@@ -742,6 +761,7 @@ function mapMemoryRow(r: any): MemoryEntry {
     importance: r.importance,
     tags: r.tags ?? [],
     source: r.source,
+    relevance_score: r.relevance_score ?? 0.5,
     created_at: new Date(r.created_at).toISOString(),
     updated_at: new Date(r.updated_at).toISOString(),
   };

@@ -307,6 +307,7 @@ export interface MemoryEntry {
   importance: number;   // 1–5
   tags: string[];
   source: MemorySource;
+  relevance_score: number; // 0.0–1.0, defaults to 0.5
   created_at: string;   // ISO 8601 string (outward API)
   updated_at: string;
 }
@@ -318,6 +319,7 @@ export interface MemoryEntryInput {
   importance?: number;   // defaults to 3
   tags?: string[];
   source?: MemorySource;
+  relevance_score?: number; // defaults based on source (manual=0.5, auto_learn=0.3)
 }
 
 export interface MemoryEntryUpdate {

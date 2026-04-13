@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { fetchMemory, deleteMemory, type MemoryEntry } from "@/lib/api";
+import { fetchMemory, deleteMemory, createMemoryEntry, type MemoryEntry } from "@/lib/api";
 
 const CATEGORIES = [
   { id: "", label: "全部" },
@@ -10,6 +10,15 @@ const CATEGORIES = [
   { id: "instruction", label: "指令" },
   { id: "auto_learn", label: "自动学习" },
 ];
+
+const ADD_FORM_CATEGORIES = [
+  { id: "preference", label: "偏好" },
+  { id: "fact", label: "事实" },
+  { id: "context", label: "上下文" },
+  { id: "instruction", label: "指令" },
+];
+
+const MAX_CONTENT_LENGTH = 500;
 
 const CATEGORY_STYLES: Record<string, { bg: string; text: string; border: string }> = {
   preference: { bg: "rgba(139,92,246,0.15)", text: "#c4b5fd", border: "rgba(139,92,246,0.4)" },
@@ -110,12 +119,18 @@ export default function MemoryView({ userId }: MemoryViewProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Add form state
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newCategory, setNewCategory] = useState<string>("preference");
+  const [newContent, setNewContent] = useState("");
+  const [adding, setAdding] = useState(false);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const data = await fetchMemory(userId, activeCategory || undefined);
-      setMemories(data.memories ?? []);
+      setMemories(data.entries ?? []);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -124,6 +139,25 @@ export default function MemoryView({ userId }: MemoryViewProps) {
   }, [userId, activeCategory]);
 
   useEffect(() => { load(); }, [load]);
+
+  const handleAddMemory = async () => {
+    if (!newContent.trim()) return;
+    if (newContent.length > MAX_CONTENT_LENGTH) return;
+    setAdding(true);
+    try {
+      const entry = await createMemoryEntry(userId, newCategory, newContent.trim(), "manual");
+      // Optimistic insert to top
+      setMemories((prev) => [entry, ...prev]);
+      // Reset form
+      setNewContent("");
+      setNewCategory("preference");
+      setShowAddForm(false);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setAdding(false);
+    }
+  };
 
   return (
     <div className="h-full overflow-y-auto" style={{ backgroundColor: "var(--bg-base)" }}>
@@ -174,6 +208,94 @@ export default function MemoryView({ userId }: MemoryViewProps) {
             ⚠️ {error}
           </div>
         )}
+
+        {/* Add Memory Form */}
+        <div className="mb-5">
+          <button
+            onClick={() => setShowAddForm((s) => !s)}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-colors"
+            style={{
+              backgroundColor: showAddForm ? "var(--bg-overlay)" : "var(--bg-surface)",
+              border: "1px solid var(--border-subtle)",
+              color: showAddForm ? "var(--text-accent)" : "var(--text-primary)",
+            }}
+          >
+            <span>{showAddForm ? "▲" : "＋"}</span>
+            {showAddForm ? "收起" : "添加记忆"}
+          </button>
+
+          {showAddForm && (
+            <div
+              className="mt-3 rounded-xl p-4"
+              style={{ backgroundColor: "var(--bg-surface)", border: "1px solid var(--border-subtle)" }}
+            >
+              {/* Category select */}
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-xs" style={{ color: "var(--text-muted)" }}>分类：</span>
+                <select
+                  value={newCategory}
+                  onChange={(e) => setNewCategory(e.target.value)}
+                  className="text-xs px-2 py-1 rounded-md bg-transparent"
+                  style={{ border: "1px solid var(--border-subtle)", color: "var(--text-primary)" }}
+                >
+                  {ADD_FORM_CATEGORIES.map((cat) => (
+                    <option key={cat.id} value={cat.id}>{cat.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Content textarea */}
+              <textarea
+                value={newContent}
+                onChange={(e) => setNewContent(e.target.value)}
+                placeholder="在这里输入记忆内容..."
+                maxLength={MAX_CONTENT_LENGTH + 100}
+                className="w-full rounded-lg p-3 text-sm resize-none"
+                style={{
+                  backgroundColor: "var(--bg-elevated)",
+                  border: "1px solid var(--border-subtle)",
+                  color: "var(--text-primary)",
+                  minHeight: "80px",
+                }}
+              />
+              <div className="flex items-center justify-between mt-2">
+                <span
+                  className="text-[10px]"
+                  style={{
+                    color: newContent.length > MAX_CONTENT_LENGTH ? "var(--accent-red)" : "var(--text-muted)",
+                  }}
+                >
+                  {newContent.length}/{MAX_CONTENT_LENGTH} 字符
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => { setShowAddForm(false); setNewContent(""); }}
+                    className="px-3 py-1.5 rounded-md text-xs transition-colors"
+                    style={{ color: "var(--text-muted)" }}
+                    disabled={adding}
+                  >
+                    取消
+                  </button>
+                  <button
+                    onClick={handleAddMemory}
+                    disabled={!newContent.trim() || newContent.length > MAX_CONTENT_LENGTH || adding}
+                    className="px-3 py-1.5 rounded-md text-xs font-medium transition-colors"
+                    style={{
+                      backgroundColor: !newContent.trim() || newContent.length > MAX_CONTENT_LENGTH || adding
+                        ? "var(--border-subtle)"
+                        : "var(--accent-green)",
+                      color: !newContent.trim() || newContent.length > MAX_CONTENT_LENGTH || adding
+                        ? "var(--text-muted)"
+                        : "#fff",
+                    }}
+                  >
+                    {adding ? "保存中..." : "✓ 保存记忆"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Loading skeletons */}
         {loading && (

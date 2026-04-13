@@ -562,7 +562,15 @@ chatRouter.post("/feedback", async (c) => {
   // S2: Fire-and-forget auto_learn on positive-signal feedback
   // Fetches the full decision record and passes it to autoLearnFromDecision
   // so memory_entries gets updated without blocking the feedback response.
+  // M2: Also boost recent auto_learn memory relevance_score for this user.
   if (["thumbs_up", "accepted", "follow_up_thanks"].includes(feedback_type)) {
+    // M2: Boost recent auto_learn entries (fire-and-forget)
+    if (user_id) {
+      const { MemoryEntryRepo } = await import("../db/repositories.js");
+      MemoryEntryRepo.boostRecentAutoLearn(user_id, 300_000).catch(() => {
+        // ignore errors, non-blocking
+      });
+    }
     const { autoLearnFromDecision } = await import("../services/memory-store.js");
     const { query: q2 } = await import("../db/connection.js");
     q2(`SELECT intent, selected_model, exec_input_tokens, exec_output_tokens FROM decision_logs WHERE id=$1`, [decision_id])

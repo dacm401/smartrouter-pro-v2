@@ -64,7 +64,13 @@ export function scoreEntry(
     );
   }
 
-  const total = importanceScore + recencyScore + kw.score;
+  // M2: Relevance score component: 0–10 points (based on feedback-boosted relevance_score)
+  const relevanceScore = Math.round((entry.relevance_score ?? 0.5) * 10);
+  if (relevanceScore > 5) {
+    reasons.push(`relevance=${relevanceScore}pts`);
+  }
+
+  const total = importanceScore + recencyScore + kw.score + relevanceScore;
   return { score: total, reason: reasons.join(" | ") };
 }
 
