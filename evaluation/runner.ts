@@ -118,7 +118,7 @@ function parseArgs(): CliArgs {
 
 // ── Utils ──────────────────────────────────────────────────────────────────────
 
-function getCommitHash(): string | undefined {
+async function getCommitHash(): Promise<string | undefined> {
   try {
     // Try to read from git
     const { execSync } = await import("child_process");
@@ -174,7 +174,7 @@ async function runRoutingBenchmark(
       const data = await res.json() as any;
       const decision = data?.decision;
       const actualMode = decision?.routing?.selected_role ?? "unknown";
-      const actualIntent = decision?.intent?.type ?? "unknown";
+      const actualIntent = decision?.input_features?.intent ?? "unknown";
 
       const modeCorrect = actualMode === tc.expected_mode;
       const intentCorrect = actualIntent === tc.expected_intent;
