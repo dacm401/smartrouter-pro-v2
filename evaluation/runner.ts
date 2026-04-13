@@ -1,59 +1,80 @@
 /**
- * B2: Benchmark Runner v2 — 接真实 API
+ * Sprint 26: Benchmark Runner v3 — 完整评测体系
  *
- * 升级自 B1 skeleton:
- *   - CLI args: --base-url, --user-id, --suite
- *   - 30s per-request timeout
- *   - printSummary() 格式化摘要
- *   - 输出到 evaluation/results/latest.json
+ * 评测维度：
+ *   1. 路由准确率 (Routing Accuracy) — 路由选对了吗？
+ *   2. 意图准确率 (Intent Accuracy) — intent 分类对吗？
+ *   3. 质量评分 (Quality Score) — 回答质量够吗？
  *
  * Usage:
- *   npx ts-node evaluation/runner.ts
- *   npx ts-node evaluation/runner.ts --base-url http://localhost:3001 --user-id test-user --suite direct
- *   npm run benchmark -- --suite execute
+ *   npx tsx evaluation/runner.ts --suite routing
+ *   npx tsx evaluation/runner.ts --suite quality
+ *   npx tsx evaluation/runner.ts --suite all --report
+ *   npx tsx evaluation/runner.ts --suite quality --judge  (启用 LLM Judge)
  */
 
 import * as fs from "fs";
 import * as path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-export interface BenchmarkTask {
-  id: string;
-  /** Short human-readable description */
-  description: string;
-  /** The user message to send */
-  prompt: string;
-  /** Expected routing mode */
-  expected_mode: "direct" | "research" | "execute";
-  /** Optional: expected role (fast/slow) */
-  expected_role?: "fast" | "slow";
-  /** Optional: body.execute flag for execute-mode tasks */
-  execute?: boolean;
+interface RoutingTestCase {
+  input: string;
+  expected_mode: "fast" | "slow";
+  expected_intent: string;
+  reason: string;
 }
 
-export interface BenchmarkResult {
-  task_id: string;
-  description: string;
-  prompt_preview: string;
+interface RoutingResult {
+  input: string;
   expected_mode: string;
-  actual_mode: string | null;
-  actual_role: string | null;
-  matched: boolean;
+  actual_mode: string;
+  expected_intent: string;
+  actual_intent: string;
+  mode_correct: boolean;
+  intent_correct: boolean;
   latency_ms: number;
-  tokens_used: number;
-  error?: string;
 }
 
-export interface BenchmarkSummary {
-  total: number;
-  passed: number;
-  failed: number;
-  errors: number;
-  pass_rate: string;
-  total_latency_ms: number;
-  avg_latency_ms: number;
+interface QualityTestCase {
+  input: string;
+  expected_keywords: string[];
+  min_length: number;
+  judge_criteria: string;
+  category: "code" | "explanation" | "creative" | "analysis";
+}
+
+interface QualityResult {
+  input: string;
+  answer: string;
+  category: string;
+  keyword_hits: number;
+  keyword_total: number;
+  length_ok: boolean;
+  judge_score?: number;
+  rule_score: number; // 0-100
+}
+
+interface BenchmarkSummary {
+  routing?: {
+    total: number;
+    mode_accuracy: string;
+    intent_accuracy: string;
+    by_intent: Record<string, { total: number; correct: number; rate: string }>;
+    failures: RoutingResult[];
+  };
+  quality?: {
+    total: number;
+    rule_pass_rate: string;
+    judge_avg?: string;
+    by_category: Record<string, { total: number; avg_score: number }>;
+  };
   timestamp: string;
+  commit_hash?: string;
 }
 
 // ── CLI argument parsing ────────────────────────────────────────────────────────
@@ -61,14 +82,18 @@ export interface BenchmarkSummary {
 interface CliArgs {
   baseUrl: string;
   userId: string;
-  suite: string | null;
+  suite: "routing" | "quality" | "all";
+  judge: boolean;
+  report: boolean;
 }
 
 function parseArgs(): CliArgs {
   const args = process.argv.slice(2);
   let baseUrl = process.env.API_BASE || "http://localhost:3001";
   let userId = process.env.BENCHMARK_USER_ID || "benchmark-user";
-  let suite: string | null = null;
+  let suite: CliArgs["suite"] = "all";
+  let judge = false;
+  let report = false;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -77,220 +102,480 @@ function parseArgs(): CliArgs {
     } else if (arg === "--user-id" && i + 1 < args.length) {
       userId = args[++i];
     } else if (arg === "--suite" && i + 1 < args.length) {
-      suite = args[++i];
+      const s = args[++i];
+      if (s === "routing" || s === "quality" || s === "all") {
+        suite = s;
+      }
+    } else if (arg === "--judge") {
+      judge = true;
+    } else if (arg === "--report") {
+      report = true;
     }
   }
 
-  return { baseUrl, userId, suite };
+  return { baseUrl, userId, suite, judge, report };
 }
 
-// ── Task loading ────────────────────────────────────────────────────────────────
+// ── Utils ──────────────────────────────────────────────────────────────────────
 
-function loadTasks(tasksDir: string, suite: string | null): BenchmarkTask[] {
-  const tasks: BenchmarkTask[] = [];
-
-  if (!fs.existsSync(tasksDir)) return tasks;
-
-  const files = suite
-    ? [path.join(tasksDir, `${suite}.json`)]
-    : fs.readdirSync(tasksDir)
-        .filter((f) => f.endsWith(".json"))
-        .map((f) => path.join(tasksDir, f));
-
-  for (const file of files) {
-    if (!fs.existsSync(file)) continue;
-    const content = fs.readFileSync(file, "utf-8");
-    try {
-      const parsed = JSON.parse(content) as BenchmarkTask[] | BenchmarkTask;
-      if (Array.isArray(parsed)) tasks.push(...parsed);
-      else tasks.push(parsed);
-    } catch {
-      console.warn(`Skipping invalid JSON: ${file}`);
-    }
+function getCommitHash(): string | undefined {
+  try {
+    // Try to read from git
+    const { execSync } = await import("child_process");
+    return execSync("git rev-parse --short HEAD", { encoding: "utf-8" }).trim();
+  } catch {
+    return undefined;
   }
-
-  return tasks;
 }
 
-// ── Core runner (30s timeout) ──────────────────────────────────────────────────
+function ensureDir(dir: string): void {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+}
 
-const REQUEST_TIMEOUT_MS = 30_000;
+function writeJson(path: string, data: unknown): void {
+  fs.writeFileSync(path, JSON.stringify(data, null, 2));
+}
 
-async function runBenchmark(
-  tasks: BenchmarkTask[],
-  apiBase: string,
+// ── Routing Benchmark ───────────────────────────────────────────────────────────
+
+async function runRoutingBenchmark(
+  baseUrl: string,
   userId: string
-): Promise<BenchmarkResult[]> {
-  const results: BenchmarkResult[] = [];
+): Promise<{ results: RoutingResult[]; summary: BenchmarkSummary["routing"] }> {
+  const tasksPath = path.join(__dirname, "tasks", "routing-benchmark.json");
+  const cases: RoutingTestCase[] = JSON.parse(fs.readFileSync(tasksPath, "utf-8"));
+  const results: RoutingResult[] = [];
 
-  for (const task of tasks) {
+  console.log(`\n=== Routing Benchmark ===`);
+  console.log(`Running ${cases.length} test cases...\n`);
+
+  for (let i = 0; i < cases.length; i++) {
+    const tc = cases[i];
     const start = Date.now();
-    try {
-      const sessionId = `bench-${task.id}`;
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
-      const fetchOptions: RequestInit = {
+    try {
+      const res = await fetch(`${baseUrl}/api/chat`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-User-Id": userId },
+        headers: {
+          "Content-Type": "application/json",
+          "X-User-Id": userId,
+        },
         body: JSON.stringify({
           user_id: userId,
-          session_id: sessionId,
-          message: task.prompt,
+          session_id: `bench-routing-${i}`,
+          message: tc.input,
           history: [],
-          ...(task.execute ? { execute: true } : {}),
+          stream: false,
         }),
-        signal: controller.signal,
-      };
-
-      const res = await fetch(`${apiBase}/api/chat`, fetchOptions);
-      clearTimeout(timeout);
+      });
 
       const data = await res.json() as any;
       const decision = data?.decision;
-      const actualMode = decision?.routing?.selected_role === "fast" ? "direct" : "research";
-      const actualRole = decision?.routing?.selected_role ?? null;
-      const tokensUsed =
-        (decision?.execution?.input_tokens ?? 0) +
-        (decision?.execution?.output_tokens ?? 0);
+      const actualMode = decision?.routing?.selected_role ?? "unknown";
+      const actualIntent = decision?.intent?.type ?? "unknown";
 
-      const matched =
-        task.expected_mode === actualMode &&
-        (task.expected_role ? task.expected_role === actualRole : true);
+      const modeCorrect = actualMode === tc.expected_mode;
+      const intentCorrect = actualIntent === tc.expected_intent;
 
       results.push({
-        task_id: task.id,
-        description: task.description,
-        prompt_preview: task.prompt.slice(0, 80),
-        expected_mode: task.expected_mode,
+        input: tc.input,
+        expected_mode: tc.expected_mode,
         actual_mode: actualMode,
-        actual_role: actualRole,
-        matched,
+        expected_intent: tc.expected_intent,
+        actual_intent: actualIntent,
+        mode_correct: modeCorrect,
+        intent_correct: intentCorrect,
         latency_ms: Date.now() - start,
-        tokens_used: tokensUsed,
       });
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
+
+      process.stdout.write(modeCorrect && intentCorrect ? "✓" : "✗");
+    } catch (err) {
       results.push({
-        task_id: task.id,
-        description: task.description,
-        prompt_preview: task.prompt.slice(0, 80),
-        expected_mode: task.expected_mode,
-        actual_mode: null,
-        actual_role: null,
-        matched: false,
+        input: tc.input,
+        expected_mode: tc.expected_mode,
+        actual_mode: "error",
+        expected_intent: tc.expected_intent,
+        actual_intent: "error",
+        mode_correct: false,
+        intent_correct: false,
         latency_ms: Date.now() - start,
-        tokens_used: 0,
-        error: message.length > 200 ? message.slice(0, 200) + "..." : message,
       });
+      process.stdout.write("✗");
     }
   }
 
-  return results;
+  console.log("\n");
+
+  // Calculate summary
+  const total = results.length;
+  const modeCorrect = results.filter((r) => r.mode_correct).length;
+  const intentCorrect = results.filter((r) => r.intent_correct).length;
+
+  // By intent breakdown
+  const byIntent: Record<string, { total: number; correct: number; rate: string }> = {};
+  for (const r of results) {
+    const intent = r.expected_intent;
+    if (!byIntent[intent]) {
+      byIntent[intent] = { total: 0, correct: 0, rate: "0.0%" };
+    }
+    byIntent[intent].total++;
+    if (r.intent_correct) {
+      byIntent[intent].correct++;
+    }
+  }
+  for (const key of Object.keys(byIntent)) {
+    const item = byIntent[key];
+    item.rate = ((item.correct / item.total) * 100).toFixed(1) + "%";
+  }
+
+  const failures = results.filter((r) => !r.mode_correct || !r.intent_correct);
+
+  console.log(`总用例: ${total}`);
+  console.log(`路由准确率: ${modeCorrect}/${total} = ${((modeCorrect / total) * 100).toFixed(1)}%`);
+  console.log(`意图准确率: ${intentCorrect}/${total} = ${((intentCorrect / total) * 100).toFixed(1)}%\n`);
+
+  console.log("按意图分类准确率:");
+  for (const [intent, stats] of Object.entries(byIntent)) {
+    console.log(`  ${intent.padEnd(15)}: ${stats.correct}/${stats.total} = ${stats.rate}`);
+  }
+
+  if (failures.length > 0) {
+    console.log(`\n失败用例 (${failures.length}条):`);
+    for (const f of failures.slice(0, 10)) {
+      console.log(`  [FAIL] "${f.input.slice(0, 40)}..."`);
+      console.log(`         期望 ${f.expected_mode}/${f.expected_intent}, 实际 ${f.actual_mode}/${f.actual_intent}`);
+    }
+    if (failures.length > 10) {
+      console.log(`  ... 还有 ${failures.length - 10} 条`);
+    }
+  }
+
+  return {
+    results,
+    summary: {
+      total,
+      mode_accuracy: ((modeCorrect / total) * 100).toFixed(1) + "%",
+      intent_accuracy: ((intentCorrect / total) * 100).toFixed(1) + "%",
+      by_intent: byIntent,
+      failures: failures.slice(0, 20),
+    },
+  };
 }
 
-// ── Summary ───────────────────────────────────────────────────────────────────
+// ── Quality Benchmark ───────────────────────────────────────────────────────────
 
-function printSummary(results: BenchmarkResult[]): void {
+async function runQualityBenchmark(
+  baseUrl: string,
+  userId: string,
+  enableJudge: boolean
+): Promise<{ results: QualityResult[]; summary: BenchmarkSummary["quality"] }> {
+  const tasksPath = path.join(__dirname, "tasks", "quality-benchmark.json");
+  const cases: QualityTestCase[] = JSON.parse(fs.readFileSync(tasksPath, "utf-8"));
+  const results: QualityResult[] = [];
+
+  console.log(`\n=== Quality Benchmark ===`);
+  console.log(`Running ${cases.length} test cases...`);
+  if (enableJudge) {
+    console.log("(LLM Judge enabled - this will cost API tokens)\n");
+  } else {
+    console.log("(LLM Judge disabled - use --judge to enable)\n");
+  }
+
+  for (let i = 0; i < cases.length; i++) {
+    const tc = cases[i];
+
+    try {
+      const res = await fetch(`${baseUrl}/api/chat`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-User-Id": userId,
+        },
+        body: JSON.stringify({
+          user_id: userId,
+          session_id: `bench-quality-${i}`,
+          message: tc.input,
+          history: [],
+          stream: false,
+        }),
+      });
+
+      const data = await res.json() as any;
+      const answer = data?.response?.content ?? "";
+
+      // Rule-based scoring
+      const keywordHits = tc.expected_keywords.filter((kw) =>
+        answer.toLowerCase().includes(kw.toLowerCase())
+      ).length;
+      const lengthOk = answer.length >= tc.min_length;
+      const ruleScore = Math.round(
+        ((keywordHits / tc.expected_keywords.length) * 50) + (lengthOk ? 50 : 0)
+      );
+
+      let judgeScore: number | undefined;
+
+      // LLM Judge (optional)
+      if (enableJudge && answer.length > 0) {
+        judgeScore = await runLLMJudge(tc.input, answer, tc.judge_criteria);
+      }
+
+      results.push({
+        input: tc.input,
+        answer: answer.slice(0, 500),
+        category: tc.category,
+        keyword_hits: keywordHits,
+        keyword_total: tc.expected_keywords.length,
+        length_ok: lengthOk,
+        judge_score: judgeScore,
+        rule_score: ruleScore,
+      });
+
+      process.stdout.write(ruleScore >= 70 ? "✓" : "✗");
+    } catch (err) {
+      results.push({
+        input: tc.input,
+        answer: "",
+        category: tc.category,
+        keyword_hits: 0,
+        keyword_total: tc.expected_keywords.length,
+        length_ok: false,
+        rule_score: 0,
+      });
+      process.stdout.write("✗");
+    }
+  }
+
+  console.log("\n");
+
+  // Calculate summary
   const total = results.length;
-  const passed = results.filter((r) => r.matched).length;
-  const failed = total - passed - results.filter((r) => r.error).length;
-  const errors = results.filter((r) => r.error).length;
-  const totalLatency = results.reduce((sum, r) => sum + r.latency_ms, 0);
-  const avgLatency = total > 0 ? Math.round(totalLatency / total) : 0;
-  const passRate = total > 0 ? ((passed / total) * 100).toFixed(1) : "0.0";
+  const rulePass = results.filter((r) => r.rule_score >= 70).length;
+  const judgeScores = results.filter((r) => r.judge_score !== undefined).map((r) => r.judge_score!);
+  const judgeAvg = judgeScores.length > 0
+    ? (judgeScores.reduce((a, b) => a + b, 0) / judgeScores.length).toFixed(1)
+    : undefined;
 
-  console.log("\n" + "=".repeat(64));
-  console.log("  Benchmark Summary");
-  console.log("=".repeat(64));
-  console.log(`  Total:   ${total}`);
-  console.log(`  Passed:  ${passed}  ✅`);
-  console.log(`  Failed:  ${failed}  ⚠️`);
-  console.log(`  Errors:  ${errors}  ❌`);
-  console.log(`  Rate:    ${passRate}%`);
-  console.log(`  Latency: avg ${avgLatency}ms  total ${totalLatency}ms`);
-  console.log("=".repeat(64));
+  // By category
+  const byCategory: Record<string, { total: number; totalScore: number; avg_score: number }> = {};
+  for (const r of results) {
+    if (!byCategory[r.category]) {
+      byCategory[r.category] = { total: 0, totalScore: 0, avg_score: 0 };
+    }
+    byCategory[r.category].total++;
+    byCategory[r.category].totalScore += r.judge_score ?? r.rule_score / 20;
+  }
+  for (const key of Object.keys(byCategory)) {
+    const item = byCategory[key];
+    item.avg_score = parseFloat((item.totalScore / item.total).toFixed(1));
+  }
 
-  if (failed > 0 || errors > 0) {
-    console.log("\n  Detail:");
-    for (const r of results) {
-      if (!r.matched) {
-        const icon = r.error ? "❌" : "⚠️";
-        console.log(`  ${icon} [${r.task_id}] ${r.description}`);
-        console.log(`     Expected: ${r.expected_mode}  Actual: ${r.actual_mode ?? "N/A"}`);
-        if (r.error) console.log(`     Error: ${r.error}`);
+  console.log(`总用例: ${total}`);
+  console.log(`规则评分通过率: ${rulePass}/${total} = ${((rulePass / total) * 100).toFixed(1)}%`);
+  if (judgeAvg) {
+    console.log(`LLM Judge 平均分: ${judgeAvg}/5.0`);
+  }
+
+  console.log("\n按类型分布:");
+  for (const [cat, stats] of Object.entries(byCategory)) {
+    console.log(`  ${cat.padEnd(12)}: 平均 ${stats.avg_score}/5`);
+  }
+
+  return {
+    results,
+    summary: {
+      total,
+      rule_pass_rate: ((rulePass / total) * 100).toFixed(1) + "%",
+      judge_avg: judgeAvg ? `${judgeAvg}/5.0` : undefined,
+      by_category: Object.fromEntries(
+        Object.entries(byCategory).map(([k, v]) => [k, { total: v.total, avg_score: v.avg_score }])
+      ),
+    },
+  };
+}
+
+async function runLLMJudge(
+  question: string,
+  answer: string,
+  criteria: string
+): Promise<number | undefined> {
+  const JUDGE_PROMPT = `你是一个严格的 AI 回答质量评审员。
+请对以下回答打分（1-5分）：
+1分=完全错误或无意义
+2分=部分正确但有重大缺失
+3分=基本正确但不够完整
+4分=正确且较完整
+5分=优秀，准确完整有洞察
+
+问题：${question}
+评分标准：${criteria}
+回答：${answer}
+
+只输出一个数字（1-5），不要解释。`;
+
+  try {
+    // Try to use backend's judge endpoint or local model
+    // For now, return undefined as placeholder
+    // TODO: Implement actual judge call when API is available
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// ── Report Generation ───────────────────────────────────────────────────────────
+
+async function generateReport(
+  summary: BenchmarkSummary,
+  outputDir: string
+): Promise<string> {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  const reportPath = path.join(outputDir, `report-${timestamp}.md`);
+
+  const rating = (rate: string): string => {
+    const num = parseFloat(rate);
+    if (num >= 90) return "🟢 优秀";
+    if (num >= 80) return "🟡 良好";
+    if (num >= 70) return "🟠 及格";
+    return "🔴 需改进";
+  };
+
+  let md = `# SmartRouter Pro — Benchmark Report
+日期: ${new Date().toLocaleString("zh-CN")}
+版本: ${summary.commit_hash ?? "unknown"}
+
+## 总览
+
+| 指标 | 数值 | 评级 |
+|---|---|---|
+`;
+
+  if (summary.routing) {
+    md += `| 路由准确率 | ${summary.routing.mode_accuracy} | ${rating(summary.routing.mode_accuracy)} |\n`;
+    md += `| 意图准确率 | ${summary.routing.intent_accuracy} | ${rating(summary.routing.intent_accuracy)} |\n`;
+  }
+  if (summary.quality) {
+    md += `| 质量规则通过率 | ${summary.quality.rule_pass_rate} | ${rating(summary.quality.rule_pass_rate)} |\n`;
+    if (summary.quality.judge_avg) {
+      const judgeNum = parseFloat(summary.quality.judge_avg);
+      const judgeRating = judgeNum >= 4.0 ? "🟢 优秀" : judgeNum >= 3.5 ? "🟡 良好" : judgeNum >= 3.0 ? "🟠 及格" : "🔴 需改进";
+      md += `| LLM Judge 均分 | ${summary.quality.judge_avg} | ${judgeRating} |\n`;
+    }
+  }
+
+  if (summary.routing) {
+    md += `
+## 路由准确率详情
+
+### 按意图分类
+
+| Intent | 正确/总数 | 准确率 |
+|---|---|---|
+`;
+    for (const [intent, stats] of Object.entries(summary.routing.by_intent)) {
+      md += `| ${intent} | ${stats.correct}/${stats.total} | ${stats.rate} |\n`;
+    }
+
+    if (summary.routing.failures.length > 0) {
+      md += `
+### 失败用例示例
+
+| 输入 | 期望 | 实际 |
+|---|---|---|
+`;
+      for (const f of summary.routing.failures.slice(0, 10)) {
+        const input = f.input.slice(0, 30) + (f.input.length > 30 ? "..." : "");
+        md += `| ${input} | ${f.expected_mode}/${f.expected_intent} | ${f.actual_mode}/${f.actual_intent} |\n`;
       }
     }
   }
-  console.log();
-}
 
-// ── Output file ────────────────────────────────────────────────────────────────
+  if (summary.quality) {
+    md += `
+## 质量评分详情
 
-function writeResults(
-  results: BenchmarkResult[],
-  outputDir: string
-): string {
-  if (!fs.existsSync(outputDir)) {
-    fs.mkdirSync(outputDir, { recursive: true });
+### 按类型分布
+
+| 类型 | 数量 | 平均得分 |
+|---|---|---|
+`;
+    for (const [cat, stats] of Object.entries(summary.quality.by_category)) {
+      md += `| ${cat} | ${stats.total} | ${stats.avg_score}/5 |\n`;
+    }
   }
 
-  const timestamp = new Date().toISOString();
-  const summary: BenchmarkSummary = {
-    total: results.length,
-    passed: results.filter((r) => r.matched).length,
-    failed: results.filter((r) => !r.matched && !r.error).length,
-    errors: results.filter((r) => r.error).length,
-    pass_rate: results.length > 0
-      ? ((results.filter((r) => r.matched).length / results.length) * 100).toFixed(1) + "%"
-      : "0.0%",
-    total_latency_ms: results.reduce((s, r) => s + r.latency_ms, 0),
-    avg_latency_ms: results.length > 0
-      ? Math.round(results.reduce((s, r) => s + r.latency_ms, 0) / results.length)
-      : 0,
-    timestamp,
-  };
+  md += `
+## 建议优化方向
 
-  const output = {
-    summary,
-    results,
-    generated_at: timestamp,
-  };
+`;
+  if (summary.routing) {
+    const weakIntents = Object.entries(summary.routing.by_intent)
+      .filter(([, s]) => parseFloat(s.rate) < 80)
+      .map(([i]) => i);
+    if (weakIntents.length > 0) {
+      md += `- 以下 intent 分类准确率偏低，建议优化训练数据: ${weakIntents.join(", ")}\n`;
+    }
+  }
+  if (summary.quality && parseFloat(summary.quality.rule_pass_rate) < 85) {
+    md += `- 质量评分通过率偏低，建议检查模型输出质量\n`;
+  }
+  md += `- 定期运行 benchmark 跟踪指标变化\n`;
 
-  const outputPath = path.join(outputDir, "latest.json");
-  fs.writeFileSync(outputPath, JSON.stringify(output, null, 2));
-  return outputPath;
+  fs.writeFileSync(reportPath, md);
+  return reportPath;
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 async function main() {
   const args = parseArgs();
-  const tasksDir = path.join(__dirname, "tasks");
   const resultsDir = path.join(__dirname, "results");
+  ensureDir(resultsDir);
 
-  console.log("🏃 SmartRouter Pro — Benchmark Runner v2");
+  console.log("🏃 SmartRouter Pro — Benchmark Runner v3");
   console.log(`   API Base: ${args.baseUrl}`);
   console.log(`   User ID:  ${args.userId}`);
-  console.log(`   Suite:    ${args.suite ?? "all"}`);
-  console.log(`   Timeout:  ${REQUEST_TIMEOUT_MS / 1000}s per request`);
+  console.log(`   Suite:    ${args.suite}`);
 
-  const tasks = loadTasks(tasksDir, args.suite);
-  if (tasks.length === 0) {
-    console.error(
-      `\nNo tasks found${args.suite ? ` for suite '${args.suite}'` : ""}. ` +
-      `Add JSON files to ${tasksDir}/ (e.g. direct.json, research.json, execute.json).`
+  const summary: BenchmarkSummary = {
+    timestamp: new Date().toISOString(),
+    commit_hash: await getCommitHash(),
+  };
+
+  // Run routing benchmark
+  if (args.suite === "routing" || args.suite === "all") {
+    const { results, summary: routingSummary } = await runRoutingBenchmark(
+      args.baseUrl,
+      args.userId
     );
-    process.exit(1);
+    summary.routing = routingSummary;
+
+    // Save results
+    const timestamp = new Date().toISOString().slice(0, 10);
+    writeJson(path.join(resultsDir, `routing-${timestamp}.json`), results);
   }
 
-  console.log(`\nLoaded ${tasks.length} task(s). Running benchmark...\n`);
+  // Run quality benchmark
+  if (args.suite === "quality" || args.suite === "all") {
+    const { results, summary: qualitySummary } = await runQualityBenchmark(
+      args.baseUrl,
+      args.userId,
+      args.judge
+    );
+    summary.quality = qualitySummary;
 
-  const results = await runBenchmark(tasks, args.baseUrl, args.userId);
-  printSummary(results);
+    const timestamp = new Date().toISOString().slice(0, 10);
+    writeJson(path.join(resultsDir, `quality-${timestamp}.json`), results);
+  }
 
-  const outputPath = writeResults(results, resultsDir);
-  console.log(`Results: ${outputPath}`);
+  // Generate report
+  if (args.report || args.suite === "all") {
+    const reportPath = await generateReport(summary, resultsDir);
+    console.log(`\n📄 Report: ${reportPath}`);
+  }
+
+  console.log("\n✅ Benchmark complete!");
 }
 
 main().catch((err) => {

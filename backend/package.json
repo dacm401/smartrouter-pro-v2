@@ -15,7 +15,11 @@
     "test:api:watch": "vitest --config vitest.api.config.ts",
     "test:r1": "npx vitest run --config vitest.r1.config.ts",
     "test:r1:watch": "vitest --config vitest.r1.config.ts",
-    "benchmark": "npx ts-node ../evaluation/runner.ts"
+    "benchmark": "npx tsx ../evaluation/runner.ts",
+    "benchmark:routing": "npx tsx ../evaluation/runner.ts --suite routing",
+    "benchmark:quality": "npx tsx ../evaluation/runner.ts --suite quality",
+    "benchmark:all": "npx tsx ../evaluation/runner.ts --suite all",
+    "benchmark:report": "npx tsx ../evaluation/runner.ts --suite all --report"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.24.0",

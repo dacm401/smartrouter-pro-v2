@@ -1,0 +1,142 @@
+[
+  {
+    "input": "用Python写一个冒泡排序",
+    "expected_keywords": ["def", "for", "swap", "range"],
+    "min_length": 50,
+    "judge_criteria": "代码是否正确实现冒泡排序，是否有注释，是否可运行",
+    "category": "code"
+  },
+  {
+    "input": "解释什么是量子纠缠",
+    "expected_keywords": ["量子", "纠缠", "粒子", "叠加"],
+    "min_length": 100,
+    "judge_criteria": "解释是否准确，是否通俗易懂，是否有例子",
+    "category": "explanation"
+  },
+  {
+    "input": "写一个快速排序的Python实现，要求包含递归和迭代两种版本",
+    "expected_keywords": ["def", "quicksort", "pivot", "partition"],
+    "min_length": 150,
+    "judge_criteria": "两种实现是否正确，时间复杂度分析是否准确",
+    "category": "code"
+  },
+  {
+    "input": "解释什么是区块链，以及它如何保证数据不可篡改",
+    "expected_keywords": ["区块", "链", "哈希", "共识"],
+    "min_length": 120,
+    "judge_criteria": "概念解释是否清晰，技术原理是否准确",
+    "category": "explanation"
+  },
+  {
+    "input": "帮我写一封正式的商务邮件，请求延期提交项目报告",
+    "expected_keywords": ["延期", "报告", "抱歉", "感谢"],
+    "min_length": 80,
+    "judge_criteria": "语气是否得体，结构是否完整，理由是否充分",
+    "category": "creative"
+  },
+  {
+    "input": "用JavaScript实现一个防抖函数(debounce)",
+    "expected_keywords": ["function", "setTimeout", "clearTimeout", "return"],
+    "min_length": 60,
+    "judge_criteria": "实现是否正确，是否解释了防抖原理",
+    "category": "code"
+  },
+  {
+    "input": "解释TCP和UDP的区别，以及各自适用的场景",
+    "expected_keywords": ["TCP", "UDP", "可靠", "连接"],
+    "min_length": 100,
+    "judge_criteria": "区别描述是否准确，场景举例是否恰当",
+    "category": "explanation"
+  },
+  {
+    "input": "写一首七言绝句，主题是秋天",
+    "expected_keywords": ["秋", "叶", "风", "霜"],
+    "min_length": 20,
+    "judge_criteria": "是否符合七言绝句格式，意境是否优美",
+    "category": "creative"
+  },
+  {
+    "input": "写一个SQL查询，找出每个部门工资最高的员工",
+    "expected_keywords": ["SELECT", "MAX", "GROUP BY", "JOIN"],
+    "min_length": 80,
+    "judge_criteria": "SQL语法是否正确，查询逻辑是否准确",
+    "category": "code"
+  },
+  {
+    "input": "解释什么是RESTful API设计原则",
+    "expected_keywords": ["资源", "HTTP", "状态码", "无状态"],
+    "min_length": 100,
+    "judge_criteria": "原则解释是否完整，举例是否恰当",
+    "category": "explanation"
+  },
+  {
+    "input": "帮我写一段产品描述，介绍一款智能手表",
+    "expected_keywords": ["智能", "健康", "监测", "续航"],
+    "min_length": 60,
+    "judge_criteria": "描述是否吸引人，卖点是否突出",
+    "category": "creative"
+  },
+  {
+    "input": "用Python实现一个简单的HTTP服务器",
+    "expected_keywords": ["http.server", "HTTPServer", "BaseHTTPRequestHandler"],
+    "min_length": 70,
+    "judge_criteria": "代码是否可运行，是否解释了工作原理",
+    "category": "code"
+  },
+  {
+    "input": "解释什么是机器学习中的过拟合，以及如何防止",
+    "expected_keywords": ["过拟合", "泛化", "正则化", "交叉验证"],
+    "min_length": 120,
+    "judge_criteria": "概念解释是否清晰，解决方法是否全面",
+    "category": "explanation"
+  },
+  {
+    "input": "写一段自我介绍，用于求职面试",
+    "expected_keywords": ["经验", "技能", "团队", "学习"],
+    "min_length": 100,
+    "judge_criteria": "结构是否清晰，重点是否突出，是否专业",
+    "category": "creative"
+  },
+  {
+    "input": "写一个正则表达式，匹配有效的邮箱地址",
+    "expected_keywords": ["regex", "@", ".", "match"],
+    "min_length": 40,
+    "judge_criteria": "正则是否正确，是否考虑了边界情况",
+    "category": "code"
+  },
+  {
+    "input": "解释什么是Docker容器，它和虚拟机有什么区别",
+    "expected_keywords": ["容器", "镜像", "轻量", "隔离"],
+    "min_length": 100,
+    "judge_criteria": "概念是否准确，对比是否清晰",
+    "category": "explanation"
+  },
+  {
+    "input": "帮我写一个短故事，主题是友谊",
+    "expected_keywords": ["朋友", "帮助", "信任", "一起"],
+    "min_length": 150,
+    "judge_criteria": "情节是否完整，情感是否真挚",
+    "category": "creative"
+  },
+  {
+    "input": "用Java实现一个单例模式，要求线程安全",
+    "expected_keywords": ["private", "static", "synchronized", "getInstance"],
+    "min_length": 80,
+    "judge_criteria": "实现是否正确，是否解释了线程安全机制",
+    "category": "code"
+  },
+  {
+    "input": "解释什么是Git的工作流程，包括add/commit/push",
+    "expected_keywords": ["工作区", "暂存区", "仓库", "分支"],
+    "min_length": 100,
+    "judge_criteria": "流程解释是否清晰，概念是否准确",
+    "category": "explanation"
+  },
+  {
+    "input": "写一段社交媒体文案，推广一款新上市的咖啡",
+    "expected_keywords": ["咖啡", "香醇", "提神", "新品"],
+    "min_length": 50,
+    "judge_criteria": "文案是否吸引人，是否符合社交媒体风格",
+    "category": "creative"
+  }
+]
