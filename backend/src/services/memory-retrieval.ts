@@ -1,24 +1,29 @@
 /**
- * Memory Retrieval Service — MR-001 + MR-003
+ * Memory Retrieval Service — MR-001 + MR-003 + Sprint 25 (Hybrid Retrieval)
  *
- * Implements the v2 retrieval policy for memory injection.
+ * Implements the v2/v3 retrieval policy for memory injection.
  *
  * Retrieval Strategy:
  * - v1 (legacy): ORDER BY importance DESC, updated_at DESC
  * - v2 (category-aware): score each entry by (recency + importance + keyword match),
  *   then apply per-category injection policies.
+ * - v3 (Sprint 25, hybrid): vector similarity (60%) + keyword (15%) + importance (15%) + recency (10%)
  *
  * Design goals:
  * - Explainable: every score has a human-readable `reason` string
  * - Configurable: category policies live in config.ts, not hard-coded
- * - Safe fallback: if v2 returns no results, falls back to v1
- * - No external dependencies: keyword matching uses token overlap with stopword
- *   filtering and lightweight stemming (MR-003 enhancement)
+ * - Safe fallback: if v2/v3 returns no results, falls back to v1
+ * - Graceful degradation: if embedding unavailable, falls back to keyword-only
  *
  * MR-003 additions:
  * - Stopword-filtered token extraction for both query and content
  * - Normalized relevance scoring (Jaccard) to prevent long-text inflation
  * - Keyword stems are pre-computed once per entry, cached in Map
+ *
+ * Sprint 25 additions:
+ * - pgvector-based semantic similarity search
+ * - Hybrid scoring with configurable weights
+ * - Async retrieval pipeline
  */
 
 import type {
@@ -27,50 +32,62 @@ import type {
   MemoryRetrievalResult,
   MemoryCategoryPolicy,
 } from "../types/index.js";
+import { getEmbedding } from "./embedding.js";
+import { MemoryEntryRepo } from "../db/repositories.js";
 
 // ── Scoring helpers ──────────────────────────────────────────────────────────
 
+/** Sprint 25: Hybrid scoring weights (total = 100) */
+const SCORE_WEIGHTS = {
+  vector: 60,      // Semantic similarity (pgvector)
+  keyword: 15,     // Keyword match (MR-003)
+  importance: 15,  // Entry importance (1-5)
+  recency: 10,     // Time decay
+};
+
 /**
  * Compute a relevance score for a single memory entry given retrieval context.
- * Score is additive: importance component + recency component + keyword component.
+ * Sprint 25: Hybrid scoring with optional vector similarity.
  *
- * All weights are fixed constants (not config) to keep the model explainable.
- * Config controls eligibility (via categoryPolicy), not scoring weights.
+ * Score breakdown:
+ * - Vector similarity: 0-60 points (if embedding available)
+ * - Keyword match: 0-15 points
+ * - Importance: 0-15 points (5 levels × 3)
+ * - Recency: 0-10 points
  */
 export function scoreEntry(
   entry: MemoryEntry,
-  context: MemoryRetrievalContext
+  context: MemoryRetrievalContext,
+  vectorSimilarity?: number  // 0-1 from pgvector
 ): { score: number; reason: string } {
   const reasons: string[] = [];
 
-  // Importance component: 0–30 points (5 levels × 6)
-  const importanceScore = entry.importance * 6;
-  reasons.push(`importance=${entry.importance}`);
+  // Vector component: 0-60 points (Sprint 25)
+  let vectorScore = 0;
+  if (vectorSimilarity !== undefined && vectorSimilarity > 0) {
+    vectorScore = Math.round(vectorSimilarity * SCORE_WEIGHTS.vector);
+    reasons.push(`vector=${vectorScore}pts(sim=${vectorSimilarity.toFixed(2)})`);
+  }
 
-  // Recency component: 0–20 points
-  // Score = 20 * decay(updatedAt, 30 days)
+  // Importance component: 0-15 points (5 levels × 3)
+  const importanceScore = entry.importance * 3;
+  reasons.push(`importance=${importanceScore}pts`);
+
+  // Recency component: 0-10 points
   const ageMs = Date.now() - new Date(entry.updated_at).getTime();
   const ageDays = ageMs / (1000 * 60 * 60 * 24);
-  const recencyScore = Math.max(0, Math.round(20 * Math.pow(0.9, ageDays / 10)));
-  reasons.push(`recency=${recencyScore}pts(age=${ageDays.toFixed(1)}d)`);
+  const recencyScore = Math.max(0, Math.round(SCORE_WEIGHTS.recency * Math.pow(0.9, ageDays / 10)));
+  reasons.push(`recency=${recencyScore}pts`);
 
-  // Keyword component: 0–15 points (MR-003 upgrade)
-  // Uses userMessage directly; no external keywords needed.
-  // Jaccard-normalised + per-match bonus to prevent long-text inflation.
+  // Keyword component: 0-15 points (MR-003)
   const kw = computeKeywordRelevance(context.userMessage, entry);
   if (kw.score > 0) {
-    reasons.push(
-      `keyword=${kw.score}pts(${kw.matchedKeywords.join(",")})`
-    );
+    // Normalize kw.score (0-15) to our weight
+    const keywordScore = Math.round((kw.score / 15) * SCORE_WEIGHTS.keyword);
+    reasons.push(`keyword=${keywordScore}pts(${kw.matchedKeywords.join(",")})`);
   }
 
-  // M2: Relevance score component: 0–10 points (based on feedback-boosted relevance_score)
-  const relevanceScore = Math.round((entry.relevance_score ?? 0.5) * 10);
-  if (relevanceScore > 5) {
-    reasons.push(`relevance=${relevanceScore}pts`);
-  }
-
-  const total = importanceScore + recencyScore + kw.score + relevanceScore;
+  const total = vectorScore + importanceScore + recencyScore + kw.score;
   return { score: total, reason: reasons.join(" | ") };
 }
 
@@ -103,13 +120,15 @@ export interface RetrievalPipelineInput {
   context: MemoryRetrievalContext;
   categoryPolicy: Record<string, MemoryCategoryPolicy>;
   maxTotalEntries: number;
+  /** Sprint 25: Optional vector similarity scores (entryId -> similarity 0-1) */
+  vectorScores?: Map<string, number>;
 }
 
 /**
- * Run the v2 retrieval pipeline on a set of candidate entries.
+ * Run the v2/v3 retrieval pipeline on a set of candidate entries.
  *
  * Pipeline:
- * 1. Score each entry (importance + recency + keyword match)
+ * 1. Score each entry (vector + importance + recency + keyword match)
  * 2. Check category eligibility via categoryPolicy
  * 3. Build per-category pools (respecting maxCount per category)
  * 4. Always-inject categories fill first (up to maxCount)
@@ -121,11 +140,12 @@ export interface RetrievalPipelineInput {
 export function runRetrievalPipeline(
   input: RetrievalPipelineInput
 ): MemoryRetrievalResult[] {
-  const { entries, context, categoryPolicy, maxTotalEntries } = input;
+  const { entries, context, categoryPolicy, maxTotalEntries, vectorScores } = input;
 
   // Step 1: score all entries
   const scored = entries.map((entry) => {
-    const { score, reason } = scoreEntry(entry, context);
+    const vectorSim = vectorScores?.get(entry.id);
+    const { score, reason } = scoreEntry(entry, context, vectorSim);
     const policy = categoryPolicy[entry.category];
     const { eligible, reason: eligReason } = policy
       ? isEligibleForInjection(entry, policy)
@@ -184,6 +204,85 @@ export function runRetrievalPipeline(
   );
 
   return result;
+}
+
+// ── Sprint 25: Hybrid Retrieval Entry Point ─────────────────────────────────
+
+export interface HybridRetrievalOptions {
+  userId: string;
+  context: MemoryRetrievalContext;
+  categoryPolicy: Record<string, MemoryCategoryPolicy>;
+  maxTotalEntries: number;
+  category?: string;
+}
+
+/**
+ * Sprint 25: Hybrid memory retrieval combining vector similarity and keyword matching.
+ *
+ * Flow:
+ * 1. Generate embedding for query (if configured)
+ * 2. Vector search -> candidate pool A
+ * 3. Keyword search -> candidate pool B
+ * 4. Merge pools, compute hybrid scores
+ * 5. Run category-aware pipeline
+ *
+ * Graceful degradation: if embedding fails, falls back to keyword-only.
+ */
+export async function retrieveMemoriesHybrid(
+  options: HybridRetrievalOptions
+): Promise<MemoryRetrievalResult[]> {
+  const { userId, context, categoryPolicy, maxTotalEntries, category } = options;
+
+  // 1. Try to get query embedding
+  const queryEmbedding = await getEmbedding(context.userMessage);
+
+  // 2. Vector search (if embedding available)
+  let vectorResults: Array<MemoryEntry & { similarity: number }> = [];
+  if (queryEmbedding) {
+    try {
+      // Fetch 4x the limit to ensure good coverage for hybrid scoring
+      vectorResults = await MemoryEntryRepo.searchByVector(
+        userId,
+        queryEmbedding,
+        maxTotalEntries * 4,
+        category
+      );
+    } catch {
+      // Fail-safe: continue without vector results
+    }
+  }
+
+  // 3. Keyword-based candidates (legacy fallback)
+  const keywordCandidates = await MemoryEntryRepo.getTopForUser(
+    userId,
+    maxTotalEntries * 4
+  );
+
+  // 4. Merge candidate pools (deduplicate)
+  const allIds = new Set<string>();
+  const mergedEntries: MemoryEntry[] = [];
+
+  for (const entry of [...vectorResults, ...keywordCandidates]) {
+    if (!allIds.has(entry.id)) {
+      allIds.add(entry.id);
+      mergedEntries.push(entry);
+    }
+  }
+
+  // 5. Build vector score map for hybrid scoring
+  const vectorScores = new Map<string, number>();
+  for (const r of vectorResults) {
+    vectorScores.set(r.id, r.similarity);
+  }
+
+  // 6. Run pipeline with hybrid scores
+  return runRetrievalPipeline({
+    entries: mergedEntries,
+    context,
+    categoryPolicy,
+    maxTotalEntries,
+    vectorScores,
+  });
 }
 
 // ── Category display labels ───────────────────────────────────────────────────

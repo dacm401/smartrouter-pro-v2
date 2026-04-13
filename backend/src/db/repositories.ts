@@ -2,6 +2,7 @@ import { v4 as uuid } from "uuid";
 import { query } from "./connection.js";
 import type { DecisionRecord, BehavioralMemory, IdentityMemory, GrowthProfile, Task, TaskListItem, TaskSummary, TaskTrace, MemoryEntry, MemoryEntryInput, MemoryEntryUpdate, ExecutionResultRecord, ExecutionResultInput, Evidence, EvidenceInput } from "../types/index.js";
 import { GROWTH_LEVELS } from "../config.js";
+import { getEmbedding } from "../services/embedding.js";
 
 export const DecisionRepo = {
   async save(d: DecisionRecord): Promise<void> {
@@ -569,7 +570,25 @@ export const MemoryEntryRepo = {
         relevanceScore,
       ]
     );
-    return mapMemoryRow(result.rows[0]);
+    const entry = mapMemoryRow(result.rows[0]);
+
+    // Sprint 25: Async fire-and-forget embedding generation
+    setImmediate(async () => {
+      try {
+        const embedding = await getEmbedding(data.content);
+        if (embedding) {
+          const vectorStr = `[${embedding.join(",")}]`;
+          await query(
+            `UPDATE memory_entries SET embedding = $1::vector WHERE id = $2`,
+            [vectorStr, id]
+          );
+        }
+      } catch {
+        // Silent fail: embedding is optional
+      }
+    });
+
+    return entry;
   },
 
   /**
@@ -586,6 +605,43 @@ export const MemoryEntryRepo = {
          AND created_at > $2`,
       [userId, since]
     );
+  },
+
+  /**
+   * Sprint 25: Vector similarity search using pgvector.
+   * Returns entries ordered by cosine similarity (highest first).
+   */
+  async searchByVector(
+    userId: string,
+    queryEmbedding: number[],
+    limit: number = 20,
+    category?: string
+  ): Promise<Array<MemoryEntry & { similarity: number }>> {
+    const vectorStr = `[${queryEmbedding.join(",")}]`;
+    const params: unknown[] = [userId, vectorStr, limit];
+    let categoryClause = "";
+
+    if (category) {
+      params.push(category);
+      categoryClause = `AND category = $${params.length}`;
+    }
+
+    const result = await query(
+      `SELECT *,
+              1 - (embedding <=> $2::vector) AS similarity
+       FROM memory_entries
+       WHERE user_id = $1
+         AND embedding IS NOT NULL
+         ${categoryClause}
+       ORDER BY embedding <=> $2::vector
+       LIMIT $3`,
+      params
+    );
+
+    return result.rows.map((r: any) => ({
+      ...mapMemoryRow(r),
+      similarity: parseFloat(r.similarity),
+    }));
   },
 
   async getById(id: string, userId: string): Promise<MemoryEntry | null> {

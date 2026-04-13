@@ -68,6 +68,15 @@ export const config = {
     maxResults: parseInt(process.env.WEB_SEARCH_MAX_RESULTS || "5"),
   },
 
+  // Sprint 25: Embedding service for vector-based memory retrieval
+  embedding: {
+    provider: (process.env.EMBEDDING_PROVIDER ?? "openai") as "openai" | "siliconflow",
+    apiKey: process.env.EMBEDDING_API_KEY ?? process.env.OPENAI_API_KEY ?? "",
+    model: process.env.EMBEDDING_MODEL ?? "text-embedding-3-small",
+    dimensions: parseInt(process.env.EMBEDDING_DIMENSIONS ?? "1536"),
+    enabled: !!(process.env.EMBEDDING_API_KEY ?? process.env.OPENAI_API_KEY),
+  },
+
   // EL-004: External tool guardrail
   guardrail: {
     // Hosts permitted for http_request tool. Empty = all hosts blocked (fail-safe).
