@@ -16,11 +16,16 @@ export function ruleRoute(features: InputFeatures, identity: IdentityMemory | nu
     reasons.push(`意图"${features.intent}"需要慢模型`);
   }
 
-  if (features.complexity_score < 30) {
-    fastScore += 0.2;
+  // 收紧复杂度阈值：低复杂度 < 25，中高复杂度 >= 45
+  if (features.complexity_score < 25) {
+    fastScore += 0.25;
     reasons.push(`复杂度低(${features.complexity_score})`);
-  } else if (features.complexity_score > 60) {
+  } else if (features.complexity_score >= 45) {
     slowScore += 0.2;
+    reasons.push(`复杂度中高(${features.complexity_score})`);
+  }
+  if (features.complexity_score >= 60) {
+    slowScore += 0.15;
     reasons.push(`复杂度高(${features.complexity_score})`);
   }
 
@@ -34,6 +39,28 @@ export function ruleRoute(features: InputFeatures, identity: IdentityMemory | nu
 
   if (features.has_code) { slowScore += 0.15; reasons.push("包含代码"); }
   if (features.has_math) { slowScore += 0.15; reasons.push("包含数学"); }
+
+  // 新增：简单 math 保护，避免简单算术误走 slow
+  const isSimpleMath =
+    features.intent === "math" &&
+    features.complexity_score < 25 &&
+    features.token_count < 15;
+  if (isSimpleMath) {
+    fastScore += 0.25;
+    reasons.push("简单数学问题，优先快速模型");
+  }
+
+  // 新增：复杂任务强制 slow（translation/summarization/code/reasoning/creative）
+  const query = features.query ?? "";
+  const hasMultiConstraint = /同时|并且|另外|还要|分别|先.*再|然后|最后|以及/.test(query);
+  const hasStructuredOutput = /表格|分点|逐步|详细|完整|示例|注意事项|格式|保留.*术语|保持.*风格/.test(query);
+  if (
+    ["translation", "summarization", "code", "reasoning", "creative"].includes(features.intent) &&
+    (features.complexity_score >= 45 || hasMultiConstraint || hasStructuredOutput)
+  ) {
+    slowScore += 0.2;
+    reasons.push("复杂任务或结构化要求，提升到慢模型");
+  }
 
   if (identity) {
     if (identity.quality_sensitivity > 0.7) { slowScore += 0.1; reasons.push("用户偏好高质量"); }

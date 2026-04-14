@@ -1,0 +1,512 @@
+[
+  {
+    "input": "今天天气怎么样",
+    "expected_mode": "fast",
+    "actual_mode": "fast",
+    "expected_intent": "chat",
+    "actual_intent": "chat",
+    "mode_correct": true,
+    "intent_correct": true,
+    "latency_ms": 2841
+  },
+  {
+    "input": "你好",
+    "expected_mode": "fast",
+    "actual_mode": "fast",
+    "expected_intent": "chat",
+    "actual_intent": "chat",
+    "mode_correct": true,
+    "intent_correct": true,
+    "latency_ms": 1190
+  },
+  {
+    "input": "谢谢",
+    "expected_mode": "fast",
+    "actual_mode": "fast",
+    "expected_intent": "chat",
+    "actual_intent": "chat",
+    "mode_correct": true,
+    "intent_correct": true,
+    "latency_ms": 618
+  },
+  {
+    "input": "再见",
+    "expected_mode": "fast",
+    "actual_mode": "fast",
+    "expected_intent": "chat",
+    "actual_intent": "chat",
+    "mode_correct": true,
+    "intent_correct": true,
+    "latency_ms": 1628
+  },
+  {
+    "input": "How are you today?",
+    "expected_mode": "fast",
+    "actual_mode": "fast",
+    "expected_intent": "chat",
+    "actual_intent": "chat",
+    "mode_correct": true,
+    "intent_correct": true,
+    "latency_ms": 741
+  },
+  {
+    "input": "1+1等于几",
+    "expected_mode": "fast",
+    "actual_mode": "slow",
+    "expected_intent": "simple_qa",
+    "actual_intent": "math",
+    "mode_correct": false,
+    "intent_correct": false,
+    "latency_ms": 64695
+  },
+  {
+    "input": "北京是中国的首都吗",
+    "expected_mode": "fast",
+    "actual_mode": "fast",
+    "expected_intent": "simple_qa",
+    "actual_intent": "simple_qa",
+    "mode_correct": true,
+    "intent_correct": true,
+    "latency_ms": 2089
+  },
+  {
+    "input": "Python是什么",
+    "expected_mode": "fast",
+    "actual_mode": "fast",
+    "expected_intent": "simple_qa",
+    "actual_intent": "simple_qa",
+    "mode_correct": true,
+    "intent_correct": true,
+    "latency_ms": 763
+  },
+  {
+    "input": "What's the capital of France?",
+    "expected_mode": "fast",
+    "actual_mode": "fast",
+    "expected_intent": "simple_qa",
+    "actual_intent": "simple_qa",
+    "mode_correct": true,
+    "intent_correct": true,
+    "latency_ms": 731
+  },
+  {
+    "input": "现在几点了",
+    "expected_mode": "fast",
+    "actual_mode": "fast",
+    "expected_intent": "simple_qa",
+    "actual_intent": "chat",
+    "mode_correct": true,
+    "intent_correct": false,
+    "latency_ms": 975
+  },
+  {
+    "input": "把'hello world'翻译成中文",
+    "expected_mode": "fast",
+    "actual_mode": "fast",
+    "expected_intent": "translation",
+    "actual_intent": "translation",
+    "mode_correct": true,
+    "intent_correct": true,
+    "latency_ms": 977
+  },
+  {
+    "input": "Translate 'good morning' to Chinese",
+    "expected_mode": "fast",
+    "actual_mode": "fast",
+    "expected_intent": "translation",
+    "actual_intent": "translation",
+    "mode_correct": true,
+    "intent_correct": true,
+    "latency_ms": 356
+  },
+  {
+    "input": "用日语说谢谢",
+    "expected_mode": "fast",
+    "actual_mode": "fast",
+    "expected_intent": "translation",
+    "actual_intent": "translation",
+    "mode_correct": true,
+    "intent_correct": true,
+    "latency_ms": 362
+  },
+  {
+    "input": "翻译这段技术文档，保留所有专业术语的准确性，并解释每个术语的含义",
+    "expected_mode": "slow",
+    "actual_mode": "fast",
+    "expected_intent": "translation",
+    "actual_intent": "translation",
+    "mode_correct": false,
+    "intent_correct": true,
+    "latency_ms": 569
+  },
+  {
+    "input": "将这篇学术论文从英文翻译成中文，保持学术写作风格",
+    "expected_mode": "slow",
+    "actual_mode": "fast",
+    "expected_intent": "translation",
+    "actual_intent": "translation",
+    "mode_correct": false,
+    "intent_correct": true,
+    "latency_ms": 975
+  },
+  {
+    "input": "总结这段话的意思",
+    "expected_mode": "fast",
+    "actual_mode": "fast",
+    "expected_intent": "summarization",
+    "actual_intent": "summarization",
+    "mode_correct": true,
+    "intent_correct": true,
+    "latency_ms": 1007
+  },
+  {
+    "input": "概括一下这段文字的主要内容",
+    "expected_mode": "fast",
+    "actual_mode": "fast",
+    "expected_intent": "summarization",
+    "actual_intent": "summarization",
+    "mode_correct": true,
+    "intent_correct": true,
+    "latency_ms": 1128
+  },
+  {
+    "input": "请对这篇10页的研究报告进行深度总结，提取核心观点、方法论和结论",
+    "expected_mode": "slow",
+    "actual_mode": "fast",
+    "expected_intent": "summarization",
+    "actual_intent": "research",
+    "mode_correct": false,
+    "intent_correct": false,
+    "latency_ms": 1284
+  },
+  {
+    "input": "Summarize the key findings of this quarterly business report",
+    "expected_mode": "slow",
+    "actual_mode": "fast",
+    "expected_intent": "summarization",
+    "actual_intent": "summarization",
+    "mode_correct": false,
+    "intent_correct": true,
+    "latency_ms": 1128
+  },
+  {
+    "input": "用Python实现一个快速排序算法，要求时间复杂度O(nlogn)，并分析空间复杂度",
+    "expected_mode": "slow",
+    "actual_mode": "fast",
+    "expected_intent": "code",
+    "actual_intent": "code",
+    "mode_correct": false,
+    "intent_correct": true,
+    "latency_ms": 3019
+  },
+  {
+    "input": "帮我写一个JavaScript函数，实现深拷贝对象",
+    "expected_mode": "slow",
+    "actual_mode": "fast",
+    "expected_intent": "code",
+    "actual_intent": "code",
+    "mode_correct": false,
+    "intent_correct": true,
+    "latency_ms": 2583
+  },
+  {
+    "input": "这段代码有bug，帮我调试一下",
+    "expected_mode": "slow",
+    "actual_mode": "fast",
+    "expected_intent": "code",
+    "actual_intent": "code",
+    "mode_correct": false,
+    "intent_correct": true,
+    "latency_ms": 842
+  },
+  {
+    "input": "设计一个支持百万并发的分布式缓存系统，包括架构图、核心模块和容错机制",
+    "expected_mode": "slow",
+    "actual_mode": "fast",
+    "expected_intent": "code",
+    "actual_intent": "research",
+    "mode_correct": false,
+    "intent_correct": false,
+    "latency_ms": 3857
+  },
+  {
+    "input": "Review this code for security vulnerabilities and best practices",
+    "expected_mode": "slow",
+    "actual_mode": "fast",
+    "expected_intent": "code",
+    "actual_intent": "code",
+    "mode_correct": false,
+    "intent_correct": true,
+    "latency_ms": 139971
+  },
+  {
+    "input": "帮我优化这段SQL查询的性能",
+    "expected_mode": "slow",
+    "actual_mode": "fast",
+    "expected_intent": "code",
+    "actual_intent": "code",
+    "mode_correct": false,
+    "intent_correct": true,
+    "latency_ms": 1344
+  },
+  {
+    "input": "写一个Python脚本，批量处理CSV文件并生成统计报告",
+    "expected_mode": "slow",
+    "actual_mode": "fast",
+    "expected_intent": "code",
+    "actual_intent": "code",
+    "mode_correct": false,
+    "intent_correct": true,
+    "latency_ms": 8591
+  },
+  {
+    "input": "实现一个红黑树的插入和删除操作",
+    "expected_mode": "slow",
+    "actual_mode": "fast",
+    "expected_intent": "code",
+    "actual_intent": "code",
+    "mode_correct": false,
+    "intent_correct": true,
+    "latency_ms": 3420
+  },
+  {
+    "input": "证明黎曼猜想的等价命题",
+    "expected_mode": "slow",
+    "actual_mode": "fast",
+    "expected_intent": "math",
+    "actual_intent": "reasoning",
+    "mode_correct": false,
+    "intent_correct": false,
+    "latency_ms": 1276
+  },
+  {
+    "input": "求解这个微分方程：dy/dx = x^2 + y^2",
+    "expected_mode": "slow",
+    "actual_mode": "slow",
+    "expected_intent": "math",
+    "actual_intent": "math",
+    "mode_correct": true,
+    "intent_correct": true,
+    "latency_ms": 289180
+  },
+  {
+    "input": "计算这个矩阵的特征值和特征向量",
+    "expected_mode": "slow",
+    "actual_mode": "slow",
+    "expected_intent": "math",
+    "actual_intent": "math",
+    "mode_correct": true,
+    "intent_correct": true,
+    "latency_ms": 30088
+  },
+  {
+    "input": "证明费马小定理并给出应用实例",
+    "expected_mode": "slow",
+    "actual_mode": "fast",
+    "expected_intent": "math",
+    "actual_intent": "reasoning",
+    "mode_correct": false,
+    "intent_correct": false,
+    "latency_ms": 2071
+  },
+  {
+    "input": "用拉格朗日乘数法求解这个约束优化问题",
+    "expected_mode": "slow",
+    "actual_mode": "fast",
+    "expected_intent": "math",
+    "actual_intent": "math",
+    "mode_correct": false,
+    "intent_correct": true,
+    "latency_ms": 1340
+  },
+  {
+    "input": "分析2024年全球AI芯片市场竞争格局，包括英伟达、AMD、英特尔的市场份额变化趋势",
+    "expected_mode": "slow",
+    "actual_mode": "fast",
+    "expected_intent": "reasoning",
+    "actual_intent": "research",
+    "mode_correct": false,
+    "intent_correct": false,
+    "latency_ms": 1013
+  },
+  {
+    "input": "比较React和Vue的优缺点，从性能、生态、学习曲线三个维度分析",
+    "expected_mode": "slow",
+    "actual_mode": "fast",
+    "expected_intent": "reasoning",
+    "actual_intent": "reasoning",
+    "mode_correct": false,
+    "intent_correct": true,
+    "latency_ms": 2726
+  },
+  {
+    "input": "解释量子计算为什么能破解传统加密算法",
+    "expected_mode": "slow",
+    "actual_mode": "fast",
+    "expected_intent": "reasoning",
+    "actual_intent": "reasoning",
+    "mode_correct": false,
+    "intent_correct": true,
+    "latency_ms": 1265
+  },
+  {
+    "input": "分析美联储降息对全球资本市场的影响机制",
+    "expected_mode": "slow",
+    "actual_mode": "fast",
+    "expected_intent": "reasoning",
+    "actual_intent": "reasoning",
+    "mode_correct": false,
+    "intent_correct": true,
+    "latency_ms": 1845
+  },
+  {
+    "input": "评估采用微服务架构的利弊，给出决策框架",
+    "expected_mode": "slow",
+    "actual_mode": "fast",
+    "expected_intent": "reasoning",
+    "actual_intent": "reasoning",
+    "mode_correct": false,
+    "intent_correct": true,
+    "latency_ms": 1640
+  },
+  {
+    "input": "为什么Transformer架构比RNN更适合处理长序列",
+    "expected_mode": "slow",
+    "actual_mode": "fast",
+    "expected_intent": "reasoning",
+    "actual_intent": "reasoning",
+    "mode_correct": false,
+    "intent_correct": true,
+    "latency_ms": 4708
+  },
+  {
+    "input": "帮我写一首关于春天的诗",
+    "expected_mode": "fast",
+    "actual_mode": "fast",
+    "expected_intent": "creative",
+    "actual_intent": "creative",
+    "mode_correct": true,
+    "intent_correct": true,
+    "latency_ms": 3374
+  },
+  {
+    "input": "写一个短故事，主角是一只会说话的猫",
+    "expected_mode": "fast",
+    "actual_mode": "fast",
+    "expected_intent": "creative",
+    "actual_intent": "creative",
+    "mode_correct": true,
+    "intent_correct": true,
+    "latency_ms": 2078
+  },
+  {
+    "input": "帮我写一封辞职信",
+    "expected_mode": "fast",
+    "actual_mode": "fast",
+    "expected_intent": "creative",
+    "actual_intent": "creative",
+    "mode_correct": true,
+    "intent_correct": true,
+    "latency_ms": 856
+  },
+  {
+    "input": "创作一个科幻短篇，探讨AI意识觉醒的伦理困境，要求有完整的人物弧光和情节转折",
+    "expected_mode": "slow",
+    "actual_mode": "fast",
+    "expected_intent": "creative",
+    "actual_intent": "creative",
+    "mode_correct": false,
+    "intent_correct": true,
+    "latency_ms": 6584
+  },
+  {
+    "input": "Write a compelling marketing copy for a new electric vehicle",
+    "expected_mode": "slow",
+    "actual_mode": "fast",
+    "expected_intent": "creative",
+    "actual_intent": "creative",
+    "mode_correct": false,
+    "intent_correct": true,
+    "latency_ms": 1743
+  },
+  {
+    "input": "帮我设计一个品牌logo的创意概念",
+    "expected_mode": "slow",
+    "actual_mode": "fast",
+    "expected_intent": "creative",
+    "actual_intent": "creative",
+    "mode_correct": false,
+    "intent_correct": true,
+    "latency_ms": 798
+  },
+  {
+    "input": "调研2024年大语言模型在医疗诊断领域的应用现状，包括FDA批准的AI诊断工具",
+    "expected_mode": "slow",
+    "actual_mode": "fast",
+    "expected_intent": "research",
+    "actual_intent": "research",
+    "mode_correct": false,
+    "intent_correct": true,
+    "latency_ms": 1041
+  },
+  {
+    "input": "搜索最新的碳中和政策，分析对企业的影响",
+    "expected_mode": "slow",
+    "actual_mode": "fast",
+    "expected_intent": "research",
+    "actual_intent": "research",
+    "mode_correct": false,
+    "intent_correct": true,
+    "latency_ms": 1265
+  },
+  {
+    "input": "查找近五年关于深度学习在蛋白质结构预测中的突破性论文",
+    "expected_mode": "slow",
+    "actual_mode": "fast",
+    "expected_intent": "research",
+    "actual_intent": "research",
+    "mode_correct": false,
+    "intent_correct": true,
+    "latency_ms": 798
+  },
+  {
+    "input": "研究东南亚电商市场的发展趋势和主要玩家",
+    "expected_mode": "slow",
+    "actual_mode": "fast",
+    "expected_intent": "research",
+    "actual_intent": "research",
+    "mode_correct": false,
+    "intent_correct": true,
+    "latency_ms": 2188
+  },
+  {
+    "input": "调查当前主流的向量数据库产品，对比它们的性能特点和适用场景",
+    "expected_mode": "slow",
+    "actual_mode": "fast",
+    "expected_intent": "research",
+    "actual_intent": "research",
+    "mode_correct": false,
+    "intent_correct": true,
+    "latency_ms": 2408
+  },
+  {
+    "input": "What's the weather like?",
+    "expected_mode": "fast",
+    "actual_mode": "fast",
+    "expected_intent": "chat",
+    "actual_intent": "simple_qa",
+    "mode_correct": true,
+    "intent_correct": false,
+    "latency_ms": 1125
+  },
+  {
+    "input": "帮我写个笑话",
+    "expected_mode": "fast",
+    "actual_mode": "fast",
+    "expected_intent": "creative",
+    "actual_intent": "creative",
+    "mode_correct": true,
+    "intent_correct": true,
+    "latency_ms": 1638
+  }
+]
