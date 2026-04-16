@@ -1,25 +1,26 @@
 /**
- * Orchestrator v0.1 — 快模型先回复 + 委托慢模型后台执行
+ * Orchestrator v0.2 — 快模型两段人格化 + 慢模型后台执行
  *
- * 核心流程：
- * 1. 快模型先用精简 system prompt 生成初步回复（不等待慢模型）
- * 2. 判断是否需要委托慢模型（基于 intent + complexity）
- * 3. 如果需要委托：后台触发慢模型，写入委托任务表
- * 4. 快模型回复中告知用户"慢模型正在后台处理"
- * 5. 前端轮询 /chat-result/:taskId 获取慢模型最终结果
+ * 正确设计（老板确认）：
+ * - 快模型是两层角色：对人有性格，对慢模型是任务型高效通信
+ * - 用户感知：全程人格化，无感知被"委托"
  *
- * 关键设计：快模型不推理，只整理和分发。
- * 判断委托的逻辑在代码层（轻量规则），不增加快模型负担。
+ * 完整流程：
+ * 1. 快模型（人格化）→ "好的，请稍候～"         ← 立刻给用户看到
+ * 2. 快模型（结构化）→ 发给慢模型任务卡           ← 后台，对用户不可见
+ * 3. 慢模型执行 → 返回结构化结果
+ * 4. 快模型（人格化）→ "老板，分析好了，结果如下：" + 慢模型结果  ← 第二条回复
+ *
+ * 两次人格化回复之间是后台处理，用户感知连贯。
  */
 
 import { v4 as uuid } from "uuid";
 import type { ChatMessage } from "../types/index.js";
-import { callModelFull, callModelStream } from "../models/model-gateway.js";
+import { callModelFull } from "../models/model-gateway.js";
 import { callOpenAIWithOptions } from "../models/providers/openai.js";
 import { TaskRepo, MemoryEntryRepo, DelegationArchiveRepo } from "../db/repositories.js";
 import { config } from "../config.js";
 import { runRetrievalPipeline, buildCategoryAwareMemoryText } from "./memory-retrieval.js";
-import { assemblePrompt } from "./prompt-assembler.js";
 
 // ── 委托判断规则 ─────────────────────────────────────────────────────────────
 
@@ -84,7 +85,6 @@ const MULTI_STEP_PATTERNS = [
 export interface DelegationDecision {
   need_delegation: boolean;
   reason: string;
-  fast_reply_suffix?: string; // 快模型回复末尾追加的提示语
 }
 
 export interface DelegationTaskRecord {
@@ -111,7 +111,6 @@ export function shouldDelegate(
       return {
         need_delegation: true,
         reason: "结构性多步任务（无法一句话回复）",
-        fast_reply_suffix: "这个问题需要完整分析，我让慢模型在后台处理……",
       };
     }
   }
@@ -122,7 +121,6 @@ export function shouldDelegate(
       return {
         need_delegation: true,
         reason: "高复杂度关键词触发委托",
-        fast_reply_suffix: "这是一个复杂的分析任务，我让慢模型在后台处理……",
       };
     }
   }
@@ -140,7 +138,6 @@ export function shouldDelegate(
     return {
       need_delegation: true,
       reason: `意图"${intent}"需要慢模型`,
-      fast_reply_suffix: "这个问题需要更深入的分析，我让慢模型在后台处理……",
     };
   }
 
@@ -149,7 +146,6 @@ export function shouldDelegate(
     return {
       need_delegation: true,
       reason: `复杂度评分偏高(${complexityScore})`,
-      fast_reply_suffix: "这个问题比较复杂，我让慢模型在后台处理……",
     };
   }
 
@@ -171,17 +167,32 @@ function buildHumanizedFastPrompt(lang: "zh" | "en"): string {
 }
 
 /** 结构化快模型 prompt — 委托慢模型时使用
- * 没有人格描述，只有简洁指令，效率优先
+ * 负责生成慢模型任务卡（task card），没有人格，高效指令
+ * 慢模型任务卡包含：任务描述 + 上下文 + 输出格式要求
  */
 function buildStructuredFastPrompt(lang: "zh" | "en"): string {
   if (lang === "zh") {
-    return `你是一个高效的助手，正在将任务委托给慢模型处理。
-直接告知用户：已收到请求，慢模型正在后台处理中。
-回复要极简（1-2句），不要展开分析，不要有人格，不要重复用户的问题。`;
+    return `你是一个高效的任务分发助手。
+职责：根据用户请求，生成一个结构化的慢模型任务卡。
+
+任务卡格式：
+【任务类型】分析/搜索/整理/对比/报告...
+【用户请求】<用户的原始问题>
+【背景上下文】<相关历史背景，如果有>
+【输出要求】<数据支撑/观点明确/格式要求等>
+
+直接输出任务卡，不要有人格描述，不要说"好的"或"我来帮您"，直接开始写任务卡内容。`;
   }
-  return `You are an efficient assistant delegating a task to the slow model.
-Tell the user: request received, slow model is processing in the background.
-Keep it brief (1-2 sentences), no analysis, no personality.`;
+  return `You are an efficient task dispatcher.
+Generate a structured task card for the slow model based on the user's request.
+
+Format:
+【Task Type】analysis/search/organize/compare/report...
+【User Request】<original user question>
+【Context】<relevant background if any>
+【Output Requirements】<data support/clear opinions/format requirements>
+
+Output only the task card. No greeting, no personality.`;
 }
 
 // ── Orchestrator 主函数 ─────────────────────────────────────────────────────────
@@ -198,7 +209,7 @@ export interface OrchestratorInput {
 }
 
 export interface OrchestratorResult {
-  fast_reply: string;           // 快模型直接返回的回复
+  fast_reply: string;           // 快模型直接返回的回复（不委托时=最终回复；委托时=确认回复）
   delegation?: {
     task_id: string;
     status: "triggered";
@@ -219,7 +230,7 @@ export async function orchestrator(input: OrchestratorInput): Promise<Orchestrat
   // Step 1: 委托判断
   const decision = shouldDelegate(intent, complexity_score, message);
 
-  // Step 2: 构造快模型消息
+  // Step 2: 读取用户记忆（人格化回复和慢模型都需要上下文）
   const memories = config.memory.enabled
     ? await MemoryEntryRepo.getTopForUser(user_id, config.memory.maxEntriesToInject)
     : [];
@@ -247,27 +258,18 @@ export async function orchestrator(input: OrchestratorInput): Promise<Orchestrat
     }
   }
 
-  // 根据是否委托选择对应的快模型 prompt
-  // 委托：结构化 prompt（效率优先，无人格）
-  // 直接回复：人格化 prompt（用户体验好）
-  const fastSystemPrompt = decision.need_delegation
-    ? buildStructuredFastPrompt(language)
-    : buildHumanizedFastPrompt(language);
-
-  const userPrompt = decision.need_delegation
-    ? `用户请求：${message}`
-    : message;
+  // Step 3: 构造快模型消息（始终用人格化 prompt，委托时只调整 userPrompt 内容）
+  const fastSystemPrompt = buildHumanizedFastPrompt(language);
+  const userPrompt = message;
 
   const messages: ChatMessage[] = [
     { role: "system", content: fastSystemPrompt },
-    ...history.filter((m) => m.role !== "system").slice(-10), // 保留最近10轮
+    ...history.filter((m) => m.role !== "system").slice(-10),
     { role: "user", content: userPrompt },
   ];
 
-  // Step 3: 调用快模型（直接调用，不走 manageContext，因为 system prompt 已经精简）
-  const fastModel = reqApiKey
-    ? config.fastModel
-    : config.fastModel;
+  // Step 4: 调用快模型
+  const fastModel = config.fastModel;
 
   let fastReply: string;
   try {
@@ -282,34 +284,33 @@ export async function orchestrator(input: OrchestratorInput): Promise<Orchestrat
     }
   } catch (e: any) {
     console.error("[orchestrator] Fast model call failed:", e.message);
-    // 快模型失败时给一个兜底回复
     fastReply = language === "zh"
-      ? "抱歉，快模型暂时不可用。请稍后再试。"
-      : "Sorry, the fast model is temporarily unavailable. Please try again.";
+      ? "抱歉，服务暂时不可用。"
+      : "Sorry, the service is temporarily unavailable.";
   }
 
-  // Step 4: 如果需要委托，触发后台慢模型
+  // Step 5: 如果需要委托，触发后台慢模型（慢结果包装也在后台做）
   let delegation: OrchestratorResult["delegation"] | undefined;
 
   if (decision.need_delegation) {
     const taskId = uuid();
 
-    // 异步触发慢模型（不等待完成）
+    // 异步：慢模型执行 + 快模型包装slowMessage（全部在后台）
     triggerSlowModelBackground({
       taskId,
       message,
       user_id,
       session_id,
-      fast_reply: fastReply,
       reqApiKey,
-      // 不再传 history，慢模型独立对话，知识共享靠 delegation_archive 档案库
+      memoryText,
+      // slowReply（人格化确认）由本函数返回，慢模型包装结果由后台做
     }).catch((e) => console.error("[orchestrator] Slow model background trigger failed:", e.message));
 
     delegation = { task_id: taskId, status: "triggered" };
   }
 
   return {
-    fast_reply: fastReply,
+    fast_reply: fastReply,          // 委托时 = "好的，请稍候～"
     delegation,
     routing_info: {
       intent,
@@ -326,92 +327,126 @@ interface SlowModelBackgroundInput {
   message: string;
   user_id: string;
   session_id: string;
-  fast_reply: string;
   reqApiKey?: string;
-  // 注意：不再传 history，慢模型每个任务独立对话
-  // 历史上下文改为从 delegation_archive 档案库查询
+  memoryText: string;
 }
 
 /**
- * 后台慢模型触发（O-005 架构）
+ * 后台慢模型触发（O-005/O-006 架构）
  *
- * 核心原则：慢模型每个任务独立对话，不累积历史上下文。
- * - 委托时：建档案，写任务卡片（pending）
- * - 执行时：干净对话，不读历史，只读档案中的相关任务摘要
- * - 完成时：更新档案（completed），慢模型对话窗口关闭
- * - 新任务：再开新对话，需要历史时查档案库
+ * 完整流程：
+ * 1. 快模型（结构化）→ 生成慢模型任务卡（task card）
+ * 2. 慢模型执行任务
+ * 3. 快模型（人格化）→ 包装慢模型结果（"老板，xxx分析好了，结果如下：..."）
  *
- * 这样慢模型的 token 消耗是常数级，不随对话轮次增长。
+ * 慢模型每个任务独立对话，不累积历史上下文。
+ * 档案库记录每次任务，支持后续任务查询相关背景。
  */
 async function triggerSlowModelBackground(input: SlowModelBackgroundInput): Promise<void> {
-  const { taskId, message, user_id, session_id, reqApiKey } = input;
+  const { taskId, message, user_id, session_id, reqApiKey, memoryText } = input;
   const startTime = Date.now();
 
   try {
-    // Step 1: 读取用户记忆（从 memory_entries，这是长期知识库）
-    const memories = config.memory.enabled
-      ? await MemoryEntryRepo.getTopForUser(user_id, config.memory.maxEntriesToInject)
-      : [];
-
-    let memoryText = "";
-    if (memories.length > 0) {
-      const retrievalResults = memories.map((m) => ({ entry: m, score: m.importance, reason: "v1" }));
-      if (config.memory.retrieval.strategy === "v2") {
-        const context = { userMessage: message };
-        const candidates = await MemoryEntryRepo.getTopForUser(
-          user_id, Math.ceil(config.memory.maxEntriesToInject * 1.5)
-        );
-        const scored = runRetrievalPipeline({
-          entries: candidates,
-          context,
-          categoryPolicy: config.memory.retrieval.categoryPolicy,
-          maxTotalEntries: config.memory.maxEntriesToInject,
-        });
-        if (scored.length > 0) {
-          memoryText = buildCategoryAwareMemoryText(scored as any).combined;
-        }
-      }
-      if (!memoryText) {
-        memoryText = buildCategoryAwareMemoryText(retrievalResults as any).combined;
-      }
-    }
-
-    // Step 2: 查档案库获取相关历史上下文（替代历史消息传递）
-    // 只取最近 3 条完成的任务，作为"相关背景"注入，不走完整对话历史
+    // Step 1: 查档案库获取相关历史上下文
     const recentArchives = await DelegationArchiveRepo.getRecentByUser(user_id, 3);
     let archiveContext = "";
     if (recentArchives.length > 0) {
       const archiveLines = recentArchives.map(
-        (a) => `[历史任务] ${a.original_message}\n[结果] ${a.slow_result ?? "(处理中)"}`
+        (a) => `[历史任务] ${a.original_message}\n[结果摘要] ${a.slow_result?.substring(0, 200) ?? "(无结果)"}`
       );
-      archiveContext = `\n【相关历史背景】（来自档案库）\n${archiveLines.join("\n\n")}`;
+      archiveContext = `\n【相关历史背景】（来自档案库，如有必要可参考）\n${archiveLines.join("\n\n")}`;
     }
 
-    // Step 3: 构造慢模型任务卡片（delegation_prompt = 档案存档用）
-    const promptAssembly = assemblePrompt({
-      mode: "research",
-      modelMode: "slow",
-      intent: "reasoning",
-      userMessage: message,
-      memoryText: memoryText || undefined,
-      maxTaskSummaryTokens: config.memory.maxEntriesToInject * config.memory.maxTokensPerEntry,
-      lang: "zh",
-    });
+    // Step 2: 快模型（结构化 prompt）生成慢模型任务卡
+    const structuredPrompt = buildStructuredFastPrompt("zh");
+    const taskCardMessages: ChatMessage[] = [
+      { role: "system", content: structuredPrompt },
+      { role: "user", content: `用户请求：${message}${archiveContext ? `\n\n${archiveContext}` : ""}` },
+    ];
 
-    // 快模型对人的回复（档案中不存，快模型已直接返回给用户）
-    // delegation_prompt = 慢模型收到的完整任务卡片
-    const delegationPrompt = promptAssembly.systemPrompt + (archiveContext ? `\n${archiveContext}` : "");
+    let taskCard: string;
+    try {
+      if (reqApiKey) {
+        const resp = await callOpenAIWithOptions(
+          config.fastModel, taskCardMessages, reqApiKey, config.openaiBaseUrl || undefined
+        );
+        taskCard = resp.content;
+      } else {
+        const resp = await callModelFull(config.fastModel, taskCardMessages);
+        taskCard = resp.content;
+      }
+    } catch (e: any) {
+      // 快模型生成任务卡失败时，用规则生成兜底任务卡
+      console.warn("[orchestrator] Task card generation failed, using fallback:", e.message);
+      taskCard = `【任务类型】分析\n【用户请求】${message}${archiveContext ? `\n\n${archiveContext}` : ""}\n【输出要求】请给出有数据支撑的分析结果。`;
+    }
 
-    // Step 4: 写入档案（pending 状态）
+    // Step 3: 慢模型执行任务（独立对话，无历史）
+    const slowModel = config.slowModel;
+    const slowMessages: ChatMessage[] = [
+      { role: "system", content: taskCard },
+      { role: "user", content: message },
+    ];
+
+    let slowResult: string;
+    if (reqApiKey) {
+      const resp = await callOpenAIWithOptions(
+        slowModel, slowMessages, reqApiKey, config.openaiBaseUrl || undefined
+      );
+      slowResult = resp.content;
+    } else {
+      const resp = await callModelFull(slowModel, slowMessages);
+      slowResult = resp.content;
+    }
+
+    const slowModelMs = Date.now() - startTime;
+
+    // Step 4: 快模型（人格化 prompt）包装慢模型结果
+    // "老板，xxx分析好了，结果如下：..."
+    const wrapMessages: ChatMessage[] = [
+      { role: "system", content: buildHumanizedFastPrompt("zh") },
+      {
+        role: "user",
+        content: `用户的问题是："${message}"
+
+慢模型的执行结果如下：
+${slowResult}
+
+请用人格化的方式，把上述结果呈现给用户。可以在开头加一句简短的确认语，比如"老板，xxx分析好了"、"我帮您查到了"等。然后直接输出结果，不需要解释过程。`,
+      },
+    ];
+
+    let slowMessage: string;
+    try {
+      if (reqApiKey) {
+        const resp = await callOpenAIWithOptions(
+          config.fastModel, wrapMessages, reqApiKey, config.openaiBaseUrl || undefined
+        );
+        slowMessage = resp.content;
+      } else {
+        const resp = await callModelFull(config.fastModel, wrapMessages);
+        slowMessage = resp.content;
+      }
+    } catch (e: any) {
+      // 包装失败时，直接返回慢模型结果（兜底）
+      console.warn("[orchestrator] Slow message wrapping failed, using raw result:", e.message);
+      slowMessage = `我帮您分析好了，结果如下：\n\n${slowResult}`;
+    }
+
+    const totalMs = Date.now() - startTime;
+
+    // Step 5: 写入档案（completed 状态）
     await DelegationArchiveRepo.create({
       task_id: taskId,
       user_id,
       session_id,
       original_message: message,
-      delegation_prompt: delegationPrompt,
+      delegation_prompt: taskCard,
+      slow_result: slowResult,
+      processing_ms: totalMs,
     });
 
-    // Step 5: 创建任务记录
+    // Step 6: 创建任务记录
     await TaskRepo.create({
       id: taskId,
       user_id,
@@ -422,58 +457,28 @@ async function triggerSlowModelBackground(input: SlowModelBackgroundInput): Prom
       risk: "low",
       goal: message,
       status: "responding",
-    });
-
-    // Step 6: 慢模型独立对话（无历史消息，只有 system + user）
-    // 关键：messages 里没有 conversation history，每次都是全新对话
-    const messages: ChatMessage[] = [
-      { role: "system", content: delegationPrompt },
-      { role: "user", content: message },
-    ];
-
-    const slowModel = config.slowModel;
-    let slowResult: string;
-
-    if (reqApiKey) {
-      const resp = await callOpenAIWithOptions(
-        slowModel, messages, reqApiKey, config.openaiBaseUrl || undefined
-      );
-      slowResult = resp.content;
-    } else {
-      const resp = await callModelFull(slowModel, messages);
-      slowResult = resp.content;
-    }
-
-    const processingMs = Date.now() - startTime;
-
-    // Step 7: 更新档案为 completed（写入慢模型结果）
-    await DelegationArchiveRepo.complete({
-      task_id: taskId,
-      slow_result: slowResult,
-      processing_ms: processingMs,
-    });
+    }).catch(() => {});
 
     await TaskRepo.setStatus(taskId, "completed").catch(() => {});
 
-    // 写入 task trace（保留可观测性）
+    // Step 7: 写入 task trace（包含慢模型原始结果和包装后的消息）
     await TaskRepo.createTrace({
       id: uuid(),
       task_id: taskId,
       type: "orchestrator_delegated",
       detail: {
         original_message: message,
+        task_card: taskCard,
         slow_result: slowResult,
-        processing_ms: processingMs,
+        slow_message: slowMessage,   // 快模型人格化包装后的完整回复
+        processing_ms: totalMs,
         archived: true,
-        delegated_at: startTime,
-        completed_at: Date.now(),
       },
     }).catch(() => {});
 
   } catch (e: any) {
     console.error(`[orchestrator] Slow model failed for task ${taskId}:`, e.message);
 
-    // 写失败档案（不重蹈 history 累积问题）
     await DelegationArchiveRepo.fail(taskId, e.message).catch(() => {});
     await TaskRepo.setStatus(taskId, "failed").catch(() => {});
     await TaskRepo.createTrace({
@@ -490,8 +495,8 @@ async function triggerSlowModelBackground(input: SlowModelBackgroundInput): Prom
 export interface DelegationResult {
   task_id: string;
   status: "pending" | "completed" | "failed";
-  fast_reply?: string;
-  slow_result?: string;
+  /** 快模型人格化包装后的完整回复，前端直接追加为新消息 */
+  slowMessage?: string;
   error?: string;
 }
 
@@ -500,7 +505,6 @@ export async function getDelegationResult(taskId: string): Promise<DelegationRes
     const task = await TaskRepo.getById(taskId);
     if (!task) return null;
 
-    // 从 trace 中读取慢模型结果
     const traces = await TaskRepo.getTraces(taskId);
     const delegatedTrace = traces.find((t) => t.type === "orchestrator_delegated");
     const failedTrace = traces.find((t) => t.type === "orchestrator_delegation_failed");
@@ -517,9 +521,8 @@ export async function getDelegationResult(taskId: string): Promise<DelegationRes
       const detail = delegatedTrace.detail as any;
       return {
         task_id: taskId,
-        status: task.status as "pending" | "completed" | "failed",
-        fast_reply: detail.fast_reply,
-        slow_result: detail.slow_result,
+        status: "completed",
+        slowMessage: detail.slow_message, // 快模型人格化包装后的完整回复
       };
     }
 

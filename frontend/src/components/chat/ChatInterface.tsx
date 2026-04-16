@@ -180,19 +180,19 @@ export function ChatInterface({ onTaskIdChange, userId: propUserId }: ChatInterf
 
         const data = await res.json();
 
-        if (data.status === "completed" && data.slow_result) {
-          // 慢模型完成：用 slow_result 替换快模型回复
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === messageId
-                ? {
-                    ...m,
-                    content: data.slow_result,
-                    delegation: { status: "completed" as const, slow_result: data.slow_result, taskId },
-                  }
-                : m
-            )
-          );
+        if (data.status === "completed" && data.slowMessage) {
+          // O-006: 慢模型完成：快模型已人格化包装，追加为新消息
+          // 原快模型回复（人格化确认，如"好的，请稍候～"）保留在原位置
+          // 新消息（人格化包装后的慢模型结果）追加在下方
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: uuid(),
+              role: "assistant" as const,
+              content: data.slowMessage,
+              delegation: { status: "completed" as const, taskId },
+            },
+          ]);
         } else if (data.status === "failed") {
           setMessages((prev) =>
             prev.map((m) =>

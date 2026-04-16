@@ -109,15 +109,14 @@ chatRouter.post("/chat", async (c) => {
       { ...body, user_id: userId, session_id: sessionId }
     );
 
-    // ── O-001: Orchestrator 分支（Phase 0 最小验证）─────────────────────────────
-    // 覆盖场景：intent 为 chat/simple_qa/translation + 低复杂度 + 非 execute 模式
-    // 不覆盖：execute 模式（EL-003）、高复杂度场景（保持现有逻辑）
-    // 验证目标：快模型直接回复，慢模型后台执行，前端轮询获取最终结果
-    const SIMPLE_INTENTS = new Set(["chat", "simple_qa", "translation"]);
+    // ── O-001/O-006: Orchestrator 分支 ─────────────────────────────────────────
+    // 所有非 execute + 非 streaming 的请求都走 orchestrator
+    // 委托判断由 orchestrator.shouldDelegate() 在代码层完成
+    // 不委托：快模型人格化直接回复
+    // 委托：快模型人格化确认回复 → 后台慢模型 → 快模型人格化包装结果
     const useOrchestrator =
       body.execute !== true &&
-      SIMPLE_INTENTS.has(features.intent) &&
-      features.complexity_score < 40;
+      body.stream !== true;
 
     if (useOrchestrator) {
       const orchResult = await orchestrator({
@@ -176,7 +175,7 @@ chatRouter.post("/chat", async (c) => {
           timestamp: startTime,
           input_features: features,
           routing: {
-            router_version: "orchestrator_v0.1",
+            router_version: "orchestrator_v0.2",
             scores: { fast: 1.0, slow: 0 },
             confidence: 1.0,
             selected_model: config.fastModel,

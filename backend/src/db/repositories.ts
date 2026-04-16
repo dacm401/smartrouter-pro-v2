@@ -860,7 +860,8 @@ export interface DelegationArchiveEntry {
 
 export const DelegationArchiveRepo = {
   /**
-   * 档案创建：委托触发时写入任务卡片（pending 状态）
+   * 档案创建（O-006：慢模型在后台完成后再写档案，所以直接写 completed）
+   * 也可以先写 pending 再 complete，但 O-006 场景下慢模型完成后一起写更简单
    */
   async create(data: {
     task_id: string;
@@ -868,14 +869,23 @@ export const DelegationArchiveRepo = {
     session_id: string;
     original_message: string;
     delegation_prompt: string;
+    slow_result?: string;
+    processing_ms?: number;
   }): Promise<DelegationArchiveEntry> {
     const id = uuid();
+    const status = data.slow_result !== undefined ? "completed" : "pending";
     const result = await query(
       `INSERT INTO delegation_archive
-        (id, task_id, user_id, session_id, original_message, delegation_prompt, status)
-       VALUES ($1, $2, $3, $4, $5, $6, 'pending')
+        (id, task_id, user_id, session_id, original_message, delegation_prompt, slow_result, status, processing_ms, completed_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING *`,
-      [id, data.task_id, data.user_id, data.session_id, data.original_message, data.delegation_prompt]
+      [
+        id, data.task_id, data.user_id, data.session_id,
+        data.original_message, data.delegation_prompt,
+        data.slow_result ?? null, status,
+        data.processing_ms ?? null,
+        status === "completed" ? new Date() : null,
+      ]
     );
     return mapDelegationArchiveRow(result.rows[0]);
   },

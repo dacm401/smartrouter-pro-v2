@@ -131,7 +131,11 @@ export interface ChatResponse {
   decision: DecisionRecord;
   /** T1: The task_id associated with this response. Present when a task was created or resumed. */
   task_id?: string;
-  /** O-001: Delegation info — present when slow model is triggered in background */
+  /**
+   * O-001/O-006: Delegation info — present when slow model is triggered in background.
+   * The fast model gives an immediate acknowledgment; the slow result comes via polling
+   * as a separate message (wrapped by the fast model with its humanized prompt).
+   */
   delegation?: {
     task_id: string;
     status: "triggered";

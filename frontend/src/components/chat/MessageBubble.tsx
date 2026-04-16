@@ -139,7 +139,7 @@ export function MessageBubble({ role, content, decision, userId = "dev-user", de
             {delegation.status === "pending" && (
               <div className="flex items-center gap-1.5">
                 <span className="inline-block w-1.5 h-1.5 rounded-full animate-pulse" style={{ backgroundColor: "var(--accent-blue)" }} />
-                <span>慢模型正在后台处理…</span>
+                <span>正在为您处理中…</span>
               </div>
             )}
             {delegation.status === "completed" && (
