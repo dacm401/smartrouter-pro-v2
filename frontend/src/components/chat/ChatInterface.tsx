@@ -11,6 +11,13 @@ interface Message {
   content: string;
   decision?: any;
   streaming?: boolean;
+  /** O-002: 委托状态，供轮询 + 展示使用 */
+  delegation?: {
+    status: "pending" | "completed" | "failed";
+    slow_result?: string;
+    error?: string;
+    taskId?: string;
+  };
 }
 
 interface ChatInterfaceProps {
@@ -141,6 +148,72 @@ export function ChatInterface({ onTaskIdChange, userId: propUserId }: ChatInterf
     return data;
   };
 
+  // O-002: 轮询委托任务，直到慢模型完成
+  const pollDelegation = async (messageId: string, taskId: string) => {
+    const { apiBase } = getApiConfig();
+    const MAX_POLLS = 40; // 最多轮询40次（约2分钟）
+    const POLL_INTERVAL = 3000; // 每3秒一次
+
+    let pollCount = 0;
+
+    const poll = async (): Promise<void> => {
+      if (pollCount >= MAX_POLLS) {
+        // 超时：标记为失败
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === messageId
+              ? { ...m, delegation: { ...m.delegation, status: "failed" as const, error: "处理超时（约2分钟）" } }
+              : m
+          )
+        );
+        return;
+      }
+
+      pollCount++;
+
+      try {
+        const res = await fetch(`${apiBase}/api/chat-result/${taskId}`);
+        if (!res.ok) {
+          setTimeout(poll, POLL_INTERVAL);
+          return;
+        }
+
+        const data = await res.json();
+
+        if (data.status === "completed" && data.slow_result) {
+          // 慢模型完成：用 slow_result 替换快模型回复
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === messageId
+                ? {
+                    ...m,
+                    content: data.slow_result,
+                    delegation: { status: "completed" as const, slow_result: data.slow_result, taskId },
+                  }
+                : m
+            )
+          );
+        } else if (data.status === "failed") {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === messageId
+                ? { ...m, delegation: { ...m.delegation, status: "failed" as const, error: data.error || "处理失败" } }
+                : m
+            )
+          );
+        } else {
+          // 还在处理中，继续轮询
+          setTimeout(poll, POLL_INTERVAL);
+        }
+      } catch {
+        setTimeout(poll, POLL_INTERVAL);
+      }
+    };
+
+    // 开始首次轮询
+    setTimeout(poll, POLL_INTERVAL);
+  };
+
   const handleSend = async () => {
     const text = input.trim();
     if (!text || loading) return;
@@ -156,7 +229,27 @@ export function ChatInterface({ onTaskIdChange, userId: propUserId }: ChatInterf
         const data = await sendFallback(text, history);
         if (data.task_id) onTaskIdChange?.(data.task_id);
         const replyContent = data.message || "⚠️ 收到空响应，请检查后端日志。";
-        if (data.decision?.execution?.did_fallback) {
+
+        // O-002: 如果后端返回了 delegation，说明这是 orchestrator 路径
+        if (data.delegation) {
+          const assistantMsgId = uuid();
+          const taskId = data.delegation.task_id;
+
+          // 先显示快模型回复 + pending 状态
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: assistantMsgId,
+              role: "assistant",
+              content: replyContent,
+              decision: data.decision,
+              delegation: { status: "pending", taskId },
+            },
+          ]);
+
+          // 后台轮询慢模型结果
+          pollDelegation(assistantMsgId, taskId);
+        } else if (data.decision?.execution?.did_fallback) {
           setShowFallbackAnim({
             fromModel: data.decision.routing.selected_model,
             toModel: data.decision.execution.model_used,
@@ -255,6 +348,7 @@ export function ChatInterface({ onTaskIdChange, userId: propUserId }: ChatInterf
               content={msg.content}
               decision={msg.decision}
               userId={userId}
+              delegation={msg.delegation}
             />
             {/* Streaming cursor — new design */}
             {msg.streaming && (

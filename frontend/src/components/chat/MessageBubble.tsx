@@ -8,13 +8,19 @@ interface MessageBubbleProps {
   content: string;
   decision?: any;
   userId?: string;
+  /** O-002: 委托状态 — 告知用户慢模型正在后台处理 */
+  delegation?: {
+    status: "pending" | "completed" | "failed";
+    slow_result?: string;
+    error?: string;
+  };
 }
 
 function initials(name: string): string {
   return name.substring(0, 2).toUpperCase();
 }
 
-export function MessageBubble({ role, content, decision, userId = "dev-user" }: MessageBubbleProps) {
+export function MessageBubble({ role, content, decision, userId = "dev-user", delegation }: MessageBubbleProps) {
   const isUser = role === "user";
   const [feedbackGiven, setFeedbackGiven] = useState<string | null>(null);
 
@@ -107,6 +113,48 @@ export function MessageBubble({ role, content, decision, userId = "dev-user" }: 
               </div>
             )}
           </>
+        )}
+
+        {/* O-002: 委托状态指示器 */}
+        {delegation && role === "assistant" && (
+          <div className="mt-2 px-2 py-1.5 rounded-lg text-[10px] animate-fade-in"
+            style={{
+              backgroundColor: delegation.status === "completed"
+                ? "rgba(16,185,129,0.1)"
+                : delegation.status === "failed"
+                ? "rgba(239,68,68,0.1)"
+                : "rgba(59,130,246,0.08)",
+              border: `1px solid ${delegation.status === "completed"
+                ? "rgba(16,185,129,0.25)"
+                : delegation.status === "failed"
+                ? "rgba(239,68,68,0.25)"
+                : "rgba(59,130,246,0.2)"}`,
+              color: delegation.status === "completed"
+                ? "var(--accent-green)"
+                : delegation.status === "failed"
+                ? "var(--accent-red)"
+                : "var(--accent-blue)",
+            }}
+          >
+            {delegation.status === "pending" && (
+              <div className="flex items-center gap-1.5">
+                <span className="inline-block w-1.5 h-1.5 rounded-full animate-pulse" style={{ backgroundColor: "var(--accent-blue)" }} />
+                <span>慢模型正在后台处理…</span>
+              </div>
+            )}
+            {delegation.status === "completed" && (
+              <div className="flex items-center gap-1.5">
+                <span>✓</span>
+                <span>慢模型已完成，可刷新查看</span>
+              </div>
+            )}
+            {delegation.status === "failed" && (
+              <div className="flex items-center gap-1.5">
+                <span>⚠️</span>
+                <span>慢模型处理失败: {delegation.error || "未知错误"}</span>
+              </div>
+            )}
+          </div>
         )}
 
         {/* AI: Feedback buttons */}
