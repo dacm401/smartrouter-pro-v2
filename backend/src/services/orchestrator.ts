@@ -29,10 +29,11 @@ import { runRetrievalPipeline, buildCategoryAwareMemoryText } from "./memory-ret
 
 // ── 委托判断规则 ─────────────────────────────────────────────────────────────
 
-/** 需要委托慢模型的任务类型（扩大范围） */
+/** 需要委托慢模型的任务类型 */
 const NEED_DELEGATION_INTENTS = new Set([
   "reasoning", "math", "code", "research",
-  "search", "qa", "general",  // 这些以前直接走快模型，现在大部分也委托
+  "summarization", "creative",  // O-003/O-006 新加入：复杂写作/总结类
+  "translation",                  // 翻译类（rule-router 的翻译兜底需要在 orchestrator 层也有）
 ]);
 
 /** 低复杂度阈值（降低门槛，更激进地委托） */
@@ -53,7 +54,7 @@ const HIGH_COMPLEXITY_KEYWORDS = [
   // 对比选择类
   /哪个好|哪个更好|有什么区别|差异是|优缺点|推荐.*不|建议.*不/i,
   // 信息获取类
-  /告诉我.*是什么|什么是|解释一下|说明一下|介绍一下/i,
+  /告诉我.*是什么|解释一下.*是什么|介绍一下.*是什么/,
   // 翻译类
   /翻译成|译成|翻译为|翻译下|英译|中译/i,
   // 摘要总结类
@@ -146,8 +147,8 @@ export function shouldDelegate(
     };
   }
 
-  // Step 4: 复杂度评分偏高 → 委托（门槛降低到 40）
-  if (complexityScore >= 40) {
+  // Step 4: 复杂度评分偏高 → 委托（门槛降到 35，减少漏网）
+  if (complexityScore >= 35) {
     return {
       need_delegation: true,
       reason: `复杂度评分偏高(${complexityScore})`,
@@ -571,8 +572,10 @@ ${slowResult}
 export interface DelegationResult {
   task_id: string;
   status: "pending" | "completed" | "failed";
-  /** 快模型人格化包装后的完整回复，前端直接追加为新消息 */
-  slowMessage?: string;
+  /** 快模型人格化包装后的完整回复 */
+  slow_result?: string;
+  /** 快模型安抚回复（pending/failed 状态时） */
+  fast_reply?: string;
   error?: string;
 }
 
@@ -598,7 +601,7 @@ export async function getDelegationResult(taskId: string): Promise<DelegationRes
       return {
         task_id: taskId,
         status: "completed",
-        slowMessage: detail.slow_message, // 快模型人格化包装后的完整回复
+        slow_result: detail.slow_message, // 快模型人格化包装后的完整回复
       };
     }
 

@@ -13,10 +13,11 @@
 
 // ── 复制 shouldDelegate 逻辑（独立运行）────────────────────────────────────
 
-/** 需要委托慢模型的任务类型（扩大范围） */
+/** 需要委托慢模型的任务类型 */
 const NEED_DELEGATION_INTENTS = new Set([
   "reasoning", "math", "code", "research",
-  "search", "qa", "general",
+  "summarization", "creative",
+  "translation",
 ]);
 
 /** 低复杂度阈值 */
@@ -30,7 +31,7 @@ const HIGH_COMPLEXITY_KEYWORDS = [
   /写.*报告|写.*文章|写.*文档|写.*方案|起草|撰写/i,
   /写.*代码|实现.*算法|debug|调试|编程|写个函数|写个程序/i,
   /哪个好|哪个更好|有什么区别|差异是|优缺点|推荐.*不|建议.*不/i,
-  /告诉我.*是什么|什么是|解释一下|说明一下|介绍一下/i,
+  /告诉我.*是什么|解释一下.*是什么|介绍一下.*是什么/,
   /翻译成|译成|翻译为|翻译下|英译|中译/i,
   /总结|概括|提炼|摘要|归纳|要点|核心是/i,
   /首先.*然后|第一步|接下来|一步步|详细|步骤/i,
@@ -68,7 +69,7 @@ function shouldDelegate(intent: string, complexityScore: number, message: string
     }
     return { need_delegation: true, reason: `意图"${intent}"` };
   }
-  if (complexityScore >= 40) {
+  if (complexityScore >= 35) {
     return { need_delegation: true, reason: `复杂度(${complexityScore})` };
   }
   return { need_delegation: false, reason: "简单任务" };
@@ -209,9 +210,9 @@ const testCases = [
     expectedDelegation: false,
   },
   {
-    name: "短 qa",
+    name: "短 qa（实际应为 simple_qa）",
     message: "什么是量子计算",
-    intent: "qa",
+    intent: "simple_qa",
     complexityScore: 25,
     expectedDelegation: false,
   },
