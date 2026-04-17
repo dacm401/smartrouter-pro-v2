@@ -111,8 +111,30 @@ export function shouldDelegate(
   complexityScore: number,
   message: string
 ): DelegationDecision {
+  const msgLen = message.trim().length;
+
+  // Step 0: unknown intent + 消息长度 > 30 → 强制委托兜底
+  // 原因：LLM classifier 失败时 regex 也可能返回 unknown，此时 complexity 评分偏低
+  //       超过30字符的 query 极不可能是简单闲聊，委托慢模型更安全
+  if (intent === "unknown" && msgLen > 30) {
+    return {
+      need_delegation: true,
+      reason: "意图未知且消息较长，安全兜底委托慢模型",
+    };
+  }
+
   // Step 1: 结构性多步判断（命中即委托，最优先）
-  for (const pattern of MULTI_STEP_PATTERNS) {
+  // 中文问号 ？ (U+FF1F) 也计入问号数
+  const MULTI_STEP_PATTERNS_UPDATED = [
+    (msg: string) => msg.trim().length > 150,
+    (msg: string) => (msg.match(/[?？]/g) || []).length > 1,   // fix: 中文问号
+    (msg: string) => (msg.match(/[。.!?！？]/g) || []).length > 3,
+    (msg: string) => (msg.match(/[，,]/g) || []).length > 5,
+    (msg: string) => /[。.!?！？]$/.test(msg.trim()) && msg.trim().length > 30,
+    (msg: string) => /^关于|关于.*，|对于|关于.*和/.test(msg.trim()),
+    (msg: string) => /①|②|③|\d+个|第一.*第二.*第三|首先.*其次.*最后/i.test(msg),
+  ];
+  for (const pattern of MULTI_STEP_PATTERNS_UPDATED) {
     if (pattern(message)) {
       return {
         need_delegation: true,
@@ -122,23 +144,41 @@ export function shouldDelegate(
   }
 
   // Step 2: 高复杂度关键词（命中即委托）
-  for (const kw of HIGH_COMPLEXITY_KEYWORDS) {
-    if (kw.test(message)) {
-      return {
-        need_delegation: true,
-        reason: "高复杂度关键词触发委托",
-      };
+  // 极短消息（< 25字符）豁免关键词触发，避免"总结这段话""帮我写个笑话"等短句被误委托
+  const skipKeywordCheck = msgLen < 25;
+  if (!skipKeywordCheck) {
+    for (const kw of HIGH_COMPLEXITY_KEYWORDS) {
+      if (kw.test(message)) {
+        return {
+          need_delegation: true,
+          reason: "高复杂度关键词触发委托",
+        };
+      }
     }
   }
 
   // Step 3: 意图明确的任务类型
   if (NEED_DELEGATION_INTENTS.has(intent)) {
-    // 低复杂度例外：简单 math（3+5=？）不需要慢模型
-    if (intent === "math" && complexityScore < 20 && message.length < 30) {
-      return { need_delegation: false, reason: "简单数学不需要慢模型" };
+    // 低复杂度例外：简单 math（3+5=？/ 1+1等于几）不需要慢模型
+    if (intent === "math" && msgLen < 30) {
+      return { need_delegation: false, reason: "简单数学短句不需要慢模型" };
+    }
+    // 简单翻译：短句直接翻译（< 50字符），不含"保留/风格/学术/专业"等复杂要求
+    if (intent === "translation" && msgLen < 50 &&
+        !/保留|风格|学术|专业|术语|格式|语气|准确性|按照/i.test(message)) {
+      return { need_delegation: false, reason: "简单翻译短句，快模型直接处理" };
+    }
+    // 简单总结：短指令（< 30字符），不含"深度/提炼/核心观点/方法论"等复杂要求
+    if (intent === "summarization" && msgLen < 30) {
+      return { need_delegation: false, reason: "简单总结短指令，快模型直接处理" };
+    }
+    // 简单创作：短句（< 30字符），不含"完整/全面/系列/详细/人物/情节"等复杂要求
+    if (intent === "creative" && msgLen < 30 &&
+        !/完整|全面|系列|详细|人物弧光|情节转折|弧光|结构|章节/i.test(message)) {
+      return { need_delegation: false, reason: "简单创作短句，快模型直接处理" };
     }
     // 简单 qa/search 但消息短 → 不委托
-    if ((intent === "qa" || intent === "search" || intent === "general") && message.length < 25) {
+    if ((intent === "qa" || intent === "search" || intent === "general") && msgLen < 25) {
       return { need_delegation: false, reason: `${intent} 但消息极短，快模型直接回复` };
     }
     return {

@@ -41,30 +41,50 @@ const HIGH_COMPLEXITY_KEYWORDS = [
 /** 结构性多步判断 */
 const MULTI_STEP_PATTERNS = [
   (msg: string) => msg.trim().length > 150,
-  (msg: string) => (msg.match(/\?/g) || []).length > 1,
-  (msg: string) => (msg.match(/[。.!?]/g) || []).length > 3,
-  (msg: string) => (msg.match(/，|,/g) || []).length > 5,
-  (msg: string) => /[。.!?]$/.test(msg.trim()) && msg.trim().length > 30,
+  (msg: string) => (msg.match(/[?？]/g) || []).length > 1,   // 中文问号也计入
+  (msg: string) => (msg.match(/[。.!?！？]/g) || []).length > 3,
+  (msg: string) => (msg.match(/[，,]/g) || []).length > 5,
+  (msg: string) => /[。.!?！？]$/.test(msg.trim()) && msg.trim().length > 30,
   (msg: string) => /^关于|关于.*，|对于|关于.*和/.test(msg.trim()),
   (msg: string) => /①|②|③|\d+个|第一.*第二.*第三|首先.*其次.*最后/i.test(msg),
 ];
 
 function shouldDelegate(intent: string, complexityScore: number, message: string): { need_delegation: boolean; reason: string } {
+  const msgLen = message.trim().length;
+
+  if (intent === "unknown" && msgLen > 30) {
+    return { need_delegation: true, reason: "意图未知且消息较长" };
+  }
   for (const pattern of MULTI_STEP_PATTERNS) {
     if (pattern(message)) {
       return { need_delegation: true, reason: "结构性多步任务" };
     }
   }
-  for (const kw of HIGH_COMPLEXITY_KEYWORDS) {
-    if (kw.test(message)) {
-      return { need_delegation: true, reason: "高复杂度关键词" };
+  // 极短消息（< 25字符）豁免关键词触发
+  const skipKeywordCheck = msgLen < 25;
+  if (!skipKeywordCheck) {
+    for (const kw of HIGH_COMPLEXITY_KEYWORDS) {
+      if (kw.test(message)) {
+        return { need_delegation: true, reason: "高复杂度关键词" };
+      }
     }
   }
   if (NEED_DELEGATION_INTENTS.has(intent)) {
-    if (intent === "math" && complexityScore < 20 && message.length < 30) {
-      return { need_delegation: false, reason: "简单数学" };
+    if (intent === "math" && msgLen < 30) {
+      return { need_delegation: false, reason: "简单数学短句" };
     }
-    if ((intent === "qa" || intent === "search" || intent === "general") && message.length < 25) {
+    if (intent === "translation" && msgLen < 50 &&
+        !/保留|风格|学术|专业|术语|格式|语气|准确性|按照/i.test(message)) {
+      return { need_delegation: false, reason: "简单翻译短句" };
+    }
+    if (intent === "summarization" && msgLen < 30) {
+      return { need_delegation: false, reason: "简单总结短指令" };
+    }
+    if (intent === "creative" && msgLen < 30 &&
+        !/完整|全面|系列|详细|人物弧光|情节转折|弧光|结构|章节/i.test(message)) {
+      return { need_delegation: false, reason: "简单创作短句" };
+    }
+    if ((intent === "qa" || intent === "search" || intent === "general") && msgLen < 25) {
       return { need_delegation: false, reason: "消息极短" };
     }
     return { need_delegation: true, reason: `意图"${intent}"` };
@@ -210,11 +230,46 @@ const testCases = [
     expectedDelegation: false,
   },
   {
+    name: "1+1等于几",
+    message: "1+1等于几",
+    intent: "math",
+    complexityScore: 10,
+    expectedDelegation: false,
+  },
+  {
     name: "短 qa（实际应为 simple_qa）",
     message: "什么是量子计算",
     intent: "simple_qa",
     complexityScore: 25,
     expectedDelegation: false,
+  },
+  {
+    name: "简单翻译短句",
+    message: "把'hello world'翻译成中文",
+    intent: "translation",
+    complexityScore: 20,
+    expectedDelegation: false,
+  },
+  {
+    name: "简单总结短指令",
+    message: "总结这段话的意思",
+    intent: "summarization",
+    complexityScore: 20,
+    expectedDelegation: false,
+  },
+  {
+    name: "简单创作短句",
+    message: "帮我写个笑话",
+    intent: "creative",
+    complexityScore: 20,
+    expectedDelegation: false,
+  },
+  {
+    name: "中文问号多问题 → slow",
+    message: "Python是什么？Java是什么？",
+    intent: "simple_qa",
+    complexityScore: 25,
+    expectedDelegation: true,
   },
 ];
 
