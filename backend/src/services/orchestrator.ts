@@ -160,7 +160,9 @@ export function shouldDelegate(
   // Step 3: 意图明确的任务类型
   if (NEED_DELEGATION_INTENTS.has(intent)) {
     // 低复杂度例外：简单 math（3+5=？/ 1+1等于几）不需要慢模型
-    if (intent === "math" && msgLen < 30) {
+    // 但含高难度关键词时（证明/求解/微分/积分/矩阵等）仍需委托
+    if (intent === "math" && msgLen < 30 &&
+        !/证明|求解|微分|积分|矩阵|特征值|特征向量|优化|黎曼|费马|拉格朗日|行列式|泰勒|傅里叶|不等式|极限|导数|偏导|方程组/i.test(message)) {
       return { need_delegation: false, reason: "简单数学短句不需要慢模型" };
     }
     // 简单翻译：短句直接翻译（< 50字符），不含"保留/风格/学术/专业"等复杂要求

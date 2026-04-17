@@ -70,7 +70,8 @@ function shouldDelegate(intent: string, complexityScore: number, message: string
     }
   }
   if (NEED_DELEGATION_INTENTS.has(intent)) {
-    if (intent === "math" && msgLen < 30) {
+    if (intent === "math" && msgLen < 30 &&
+        !/证明|求解|微分|积分|矩阵|特征值|特征向量|优化|黎曼|费马|拉格朗日|行列式|泰勒|傅里叶|不等式|极限|导数|偏导|方程组/i.test(message)) {
       return { need_delegation: false, reason: "简单数学短句" };
     }
     if (intent === "translation" && msgLen < 50 &&
@@ -269,6 +270,20 @@ const testCases = [
     message: "Python是什么？Java是什么？",
     intent: "simple_qa",
     complexityScore: 25,
+    expectedDelegation: true,
+  },
+  {
+    name: "微分方程短句 → slow",
+    message: "求解这个微分方程：dy/dx = x^2 + y^2",
+    intent: "math",
+    complexityScore: 30,
+    expectedDelegation: true,
+  },
+  {
+    name: "拉格朗日短句 → slow",
+    message: "用拉格朗日乘数法求解这个约束优化问题",
+    intent: "math",
+    complexityScore: 30,
     expectedDelegation: true,
   },
 ];
