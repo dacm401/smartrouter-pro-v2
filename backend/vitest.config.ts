@@ -6,9 +6,18 @@ const testDbUrl =
   `postgresql://postgres:postgres@localhost:5432/smartrouter_test`;
 
 export default defineConfig({
+  // Allow TypeScript source files to be imported with .js extension
+  // (TypeScript NodeNext convention: `import './foo.js'` resolves to `./foo.ts`)
+  resolve: {
+    extensions: [".ts", ".tsx", ".js", ".jsx", ".json"],
+  },
   test: {
     globals: true,
     environment: "node",
+    // Use forks pool to avoid vmThreads module deduplication issues on Windows
+    // (NTFS hardlinks cause @vitest/runner to load from different paths,
+    // resulting in "No test suite found" or runner.config undefined errors).
+    pool: "forks",
     include: ["tests/**/*.test.ts"],
     exclude: [
       // Repo integration tests run in SEPARATE vitest processes (npm run test:repos).
@@ -26,6 +35,12 @@ export default defineConfig({
       // Override DATABASE_URL before any app module is loaded.
       // The harness connects to smartrouter_test and loads the schema.
       DATABASE_URL: testDbUrl,
+      // Force Node module resolution to find packages from THIS workspace's node_modules
+      // first. On Windows, NTFS hardlinks cause npm to reuse inodes across workspaces,
+      // so realpath() resolves vitest packages to the original workspace path.
+      // Without NODE_PATH, the worker's `import "vitest"` may load a different module
+      // instance than the one vitest's runner uses, causing "No test suite found" errors.
+      NODE_PATH: resolve("node_modules"),
     },
     // Runs once before all tests — creates test DB and loads schema.
     // setupFiles runs in a separate VM context BEFORE the test bundle,

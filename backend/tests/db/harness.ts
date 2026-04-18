@@ -1,3 +1,4 @@
+﻿// workspace: 20260416214742
 /**
  * Integration test harness — IT-001 / Sprint 10
  *
@@ -69,8 +70,15 @@ async function loadSchema(): Promise<void> {
   try {
     const client = await testPool.connect();
     try {
-      await client.query(sql);
-      console.log(`[harness] Schema loaded into "${TEST_DB_NAME}".`);
+      // Use an advisory lock to serialise concurrent schema setup across vitest workers.
+      // Lock id 987654321 is arbitrary — just needs to be the same in all workers.
+      await client.query("SELECT pg_advisory_lock(987654321)");
+      try {
+        await client.query(sql);
+        console.log(`[harness] Schema loaded into "${TEST_DB_NAME}".`);
+      } finally {
+        await client.query("SELECT pg_advisory_unlock(987654321)");
+      }
     } finally {
       client.release();
     }

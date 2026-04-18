@@ -1,3 +1,4 @@
+﻿// workspace: 20260416214742
 /**
  * Vitest setup file — runs BEFORE the test bundle is loaded.
  *
