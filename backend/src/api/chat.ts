@@ -429,7 +429,7 @@ chatRouter.post("/chat", async (c) => {
         if (orchResult.delegation) {
           try {
             for await (const event of pollArchiveAndYield(orchResult.delegation.task_id, features.language as "zh" | "en")) {
-              await s.write(`data: ${JSON.stringify({ type: event.type, content: event.stream })}\n\n`);
+              await s.write(`data: ${JSON.stringify({ type: event.type, stream: event.stream })}\n\n`);
             }
           } catch (e: any) {
             console.error("[stream] pollArchiveAndYield error:", e.message);
