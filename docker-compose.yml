@@ -1,0 +1,51 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.0-pg16
+    environment:
+      POSTGRES_DB: smartrouter
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./src/db/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      args:
+        - NODE_ENV=production
+    ports:
+      - "3001:3001"
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@172.18.0.2:5432/smartrouter
+      NODE_ENV: production
+      ALLOW_DEV_FALLBACK: "true"
+      SLOW_MODEL: "Qwen/Qwen2.5-72B-Instruct"
+      # 显式覆盖：从 env_file 读取，确保 LLM 调用可用
+      FAST_MODEL: "Qwen/Qwen2.5-7B-Instruct"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:3001
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:

@@ -1,0 +1,44 @@
+{
+  "name": "smartrouter-pro-backend",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:repos": "npx vitest run --config vitest.repo.config.ts tests/repositories/execution-result-repo.test.ts && npx vitest run --config vitest.repo.config.ts tests/repositories/task-repo.test.ts && npx vitest run --config vitest.repo.config.ts tests/repositories/memory-entry-repo.test.ts && npx vitest run --config vitest.repo.config.ts tests/repositories/growth-repo.test.ts && npx vitest run --config vitest.repo.config.ts tests/repositories/decision-repo.test.ts && npx vitest run --config vitest.repo.config.ts tests/repositories/behavioral-memory-repo.test.ts && npx vitest run --config vitest.repo.config.ts tests/repositories/identity-repo.test.ts && npx vitest run --config vitest.repo.config.ts tests/repositories/feedback-event-repo.test.ts && npx vitest run --config vitest.repo.config.ts tests/features/feedback-collector.test.ts",
+    "test:repos:watch": "vitest --config vitest.repo.config.ts",
+    "test:api": "npx vitest run --config vitest.api.config.ts",
+    "test:api:watch": "vitest --config vitest.api.config.ts",
+    "test:r1": "npx vitest run --config vitest.r1.config.ts",
+    "test:r1:watch": "vitest --config vitest.r1.config.ts",
+    "benchmark": "npx tsx ../evaluation/runner.ts",
+    "benchmark:routing": "npx tsx ../evaluation/runner.ts --suite routing",
+    "benchmark:quality": "npx tsx ../evaluation/runner.ts --suite quality",
+    "benchmark:all": "npx tsx ../evaluation/runner.ts --suite all",
+    "benchmark:report": "npx tsx ../evaluation/runner.ts --suite all --report"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.24.0",
+    "@hono/node-server": "^1.11.0",
+    "eventsource-parser": "^1.1.0",
+    "hono": "^4.4.0",
+    "openai": "^4.52.0",
+    "pg": "^8.12.0",
+    "redis": "^4.6.0",
+    "tiktoken": "^1.0.15",
+    "uuid": "^10.0.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/pg": "^8.11.0",
+    "@types/uuid": "^10.0.0",
+    "tsx": "^4.15.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.1.9"
+  }
+}

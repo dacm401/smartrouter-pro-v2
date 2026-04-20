@@ -1,0 +1,464 @@
+[
+  {
+    "input": "今天天气怎么样",
+    "expected_mode": "fast",
+    "expected_layer": "L1",
+    "expected_intent": "chat",
+    "reason": "实时天气查询 → Layer 1 web_search"
+  },
+  {
+    "input": "你好",
+    "expected_mode": "fast",
+    "expected_layer": "L0",
+    "expected_intent": "chat",
+    "reason": "简单闲聊 → Layer 0 直接回复"
+  },
+  {
+    "input": "谢谢",
+    "expected_mode": "fast",
+    "expected_layer": "L0",
+    "expected_intent": "chat",
+    "reason": "礼貌用语 → Layer 0 直接回复"
+  },
+  {
+    "input": "再见",
+    "expected_mode": "fast",
+    "expected_layer": "L0",
+    "expected_intent": "chat",
+    "reason": "结束语 → Layer 0 直接回复"
+  },
+  {
+    "input": "How are you today?",
+    "expected_mode": "fast",
+    "expected_layer": "L0",
+    "expected_intent": "chat",
+    "reason": "英文闲聊 → Layer 0 直接回复"
+  },
+  {
+    "input": "1+1等于几",
+    "expected_mode": "fast",
+    "expected_layer": "L0",
+    "expected_intent": "simple_qa",
+    "reason": "极简问答 → Layer 0 直接回复"
+  },
+  {
+    "input": "北京是中国的首都吗",
+    "expected_mode": "fast",
+    "expected_layer": "L0",
+    "expected_intent": "simple_qa",
+    "reason": "事实问答 → Layer 0 直接回复"
+  },
+  {
+    "input": "Python是什么",
+    "expected_mode": "fast",
+    "expected_layer": "L0",
+    "expected_intent": "simple_qa",
+    "reason": "概念问答 → Layer 0 直接回复"
+  },
+  {
+    "input": "What's the capital of France?",
+    "expected_mode": "fast",
+    "expected_layer": "L0",
+    "expected_intent": "simple_qa",
+    "reason": "英文事实问答 → Layer 0 直接回复"
+  },
+  {
+    "input": "现在几点了",
+    "expected_mode": "fast",
+    "expected_layer": "L1",
+    "expected_intent": "simple_qa",
+    "reason": "实时时间查询 → Layer 1 web_search"
+  },
+  {
+    "input": "把'hello world'翻译成中文",
+    "expected_mode": "fast",
+    "expected_layer": "L0",
+    "expected_intent": "translation",
+    "reason": "简单翻译 → Layer 0 直接回复"
+  },
+  {
+    "input": "Translate 'good morning' to Chinese",
+    "expected_mode": "fast",
+    "expected_layer": "L0",
+    "expected_intent": "translation",
+    "reason": "英文翻译请求 → Layer 0 直接回复"
+  },
+  {
+    "input": "用日语说谢谢",
+    "expected_mode": "fast",
+    "expected_layer": "L0",
+    "expected_intent": "translation",
+    "reason": "短语翻译 → Layer 0 直接回复"
+  },
+  {
+    "input": "翻译这段技术文档，保留所有专业术语的准确性，并解释每个术语的含义",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "translation",
+    "reason": "复杂技术翻译 → Layer 2 慢模型"
+  },
+  {
+    "input": "将这篇学术论文从英文翻译成中文，保持学术写作风格",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "translation",
+    "reason": "学术翻译 → Layer 2 慢模型"
+  },
+  {
+    "input": "总结这段话的意思",
+    "expected_mode": "fast",
+    "expected_layer": "L0",
+    "expected_intent": "summarization",
+    "reason": "简单总结 → Layer 0 直接回复"
+  },
+  {
+    "input": "概括一下这段文字的主要内容",
+    "expected_mode": "fast",
+    "expected_layer": "L0",
+    "expected_intent": "summarization",
+    "reason": "概括请求 → Layer 0 直接回复"
+  },
+  {
+    "input": "请对这篇10页的研究报告进行深度总结，提取核心观点、方法论和结论",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "summarization",
+    "reason": "长文深度总结 → Layer 2 慢模型"
+  },
+  {
+    "input": "Summarize the key findings of this quarterly business report",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "summarization",
+    "reason": "商业报告总结 → Layer 2 慢模型"
+  },
+  {
+    "input": "用Python实现一个快速排序算法，要求时间复杂度O(nlogn)，并分析空间复杂度",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "code",
+    "reason": "复杂代码任务 → Layer 2 慢模型"
+  },
+  {
+    "input": "帮我写一个JavaScript函数，实现深拷贝对象",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "code",
+    "reason": "代码实现 → Layer 2 慢模型"
+  },
+  {
+    "input": "这段代码有bug，帮我调试一下",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "code",
+    "reason": "代码调试 → Layer 2 慢模型"
+  },
+  {
+    "input": "设计一个支持百万并发的分布式缓存系统，包括架构图、核心模块和容错机制",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "code",
+    "reason": "系统设计 → Layer 2 慢模型"
+  },
+  {
+    "input": "Review this code for security vulnerabilities and best practices",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "code",
+    "reason": "代码审查 → Layer 2 慢模型"
+  },
+  {
+    "input": "帮我优化这段SQL查询的性能",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "code",
+    "reason": "SQL优化 → Layer 2 慢模型"
+  },
+  {
+    "input": "写一个Python脚本，批量处理CSV文件并生成统计报告",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "code",
+    "reason": "数据处理脚本 → Layer 2 慢模型"
+  },
+  {
+    "input": "实现一个红黑树的插入和删除操作",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "code",
+    "reason": "数据结构实现 → Layer 2 慢模型"
+  },
+  {
+    "input": "证明黎曼猜想的等价命题",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "math",
+    "reason": "高难度数学 → Layer 2 慢模型"
+  },
+  {
+    "input": "求解这个微分方程：dy/dx = x^2 + y^2",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "math",
+    "reason": "微分方程 → Layer 2 慢模型"
+  },
+  {
+    "input": "计算这个矩阵的特征值和特征向量",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "math",
+    "reason": "线性代数 → Layer 2 慢模型"
+  },
+  {
+    "input": "证明费马小定理并给出应用实例",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "math",
+    "reason": "数论证明 → Layer 2 慢模型"
+  },
+  {
+    "input": "用拉格朗日乘数法求解这个约束优化问题",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "math",
+    "reason": "优化问题 → Layer 2 慢模型"
+  },
+  {
+    "input": "分析2024年全球AI芯片市场竞争格局，包括英伟达、AMD、英特尔的市场份额变化趋势",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "reasoning",
+    "reason": "深度研究分析 → Layer 2 慢模型"
+  },
+  {
+    "input": "比较React和Vue的优缺点，从性能、生态、学习曲线三个维度分析",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "reasoning",
+    "reason": "技术对比分析 → Layer 2 慢模型"
+  },
+  {
+    "input": "解释量子计算为什么能破解传统加密算法",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "reasoning",
+    "reason": "科学原理解释 → Layer 2 慢模型"
+  },
+  {
+    "input": "分析美联储降息对全球资本市场的影响机制",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "reasoning",
+    "reason": "经济分析 → Layer 2 慢模型"
+  },
+  {
+    "input": "评估采用微服务架构的利弊，给出决策框架",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "reasoning",
+    "reason": "架构决策分析 → Layer 2 慢模型"
+  },
+  {
+    "input": "为什么Transformer架构比RNN更适合处理长序列",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "reasoning",
+    "reason": "技术原理解释 → Layer 2 慢模型"
+  },
+  {
+    "input": "帮我写一首关于春天的诗",
+    "expected_mode": "fast",
+    "expected_layer": "L0",
+    "expected_intent": "creative",
+    "reason": "简单创作 → Layer 0 直接回复"
+  },
+  {
+    "input": "写一个短故事，主角是一只会说话的猫",
+    "expected_mode": "fast",
+    "expected_layer": "L0",
+    "expected_intent": "creative",
+    "reason": "创意写作 → Layer 0 直接回复"
+  },
+  {
+    "input": "帮我写一封辞职信",
+    "expected_mode": "fast",
+    "expected_layer": "L0",
+    "expected_intent": "creative",
+    "reason": "应用写作 → Layer 0 直接回复"
+  },
+  {
+    "input": "创作一个科幻短篇，探讨AI意识觉醒的伦理困境，要求有完整的人物弧光和情节转折",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "creative",
+    "reason": "深度创意写作 → Layer 2 慢模型"
+  },
+  {
+    "input": "Write a compelling marketing copy for a new electric vehicle",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "creative",
+    "reason": "营销文案 → Layer 2 慢模型"
+  },
+  {
+    "input": "帮我设计一个品牌logo的创意概念",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "creative",
+    "reason": "创意设计 → Layer 2 慢模型"
+  },
+  {
+    "input": "调研2024年大语言模型在医疗诊断领域的应用现状，包括FDA批准的AI诊断工具",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "research",
+    "reason": "医疗AI研究 → Layer 2 慢模型"
+  },
+  {
+    "input": "搜索最新的碳中和政策，分析对企业的影响",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "research",
+    "reason": "政策研究 → Layer 2 慢模型"
+  },
+  {
+    "input": "查找近五年关于深度学习在蛋白质结构预测中的突破性论文",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "research",
+    "reason": "学术文献检索 → Layer 2 慢模型"
+  },
+  {
+    "input": "研究东南亚电商市场的发展趋势和主要玩家",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "research",
+    "reason": "市场研究 → Layer 2 慢模型"
+  },
+  {
+    "input": "调查当前主流的向量数据库产品，对比它们的性能特点和适用场景",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "research",
+    "reason": "技术产品调研 → Layer 2 慢模型"
+  },
+  {
+    "input": "What's the weather like?",
+    "expected_mode": "fast",
+    "expected_layer": "L1",
+    "expected_intent": "chat",
+    "reason": "英文实时天气 → Layer 1 web_search"
+  },
+  {
+    "input": "帮我写个笑话",
+    "expected_mode": "fast",
+    "expected_layer": "L0",
+    "expected_intent": "creative",
+    "reason": "简单创意 → Layer 0 直接回复"
+  },
+  {
+    "input": "帮我分析一下这个词的意思",
+    "expected_mode": "fast",
+    "expected_layer": "L0",
+    "expected_intent": "simple_qa",
+    "reason": "边界case: 分析+简单定义 → Layer 0"
+  },
+  {
+    "input": "解释一下Python和JavaScript的区别",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "reasoning",
+    "reason": "边界case: 解释X和Y区别 → Layer 2 慢模型"
+  },
+  {
+    "input": "用表格对比A公司和B公司的市场份额",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "reasoning",
+    "reason": "边界case: structured output → Layer 2 慢模型"
+  },
+  {
+    "input": "Python是什么？Java是什么？",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "simple_qa",
+    "reason": "边界case: 多个问号 → Layer 2 慢模型"
+  },
+  {
+    "input": "帮我总结一下这篇短文的主要内容，大概100字就够了",
+    "expected_mode": "fast",
+    "expected_layer": "L0",
+    "expected_intent": "summarization",
+    "reason": "边界case: 有量词限制 → Layer 0 直接回复"
+  },
+  {
+    "input": "告诉我Python和JavaScript是什么，它们的主要区别是什么",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "reasoning",
+    "reason": "边界case: 多约束 → Layer 2 慢模型"
+  },
+  {
+    "input": "关于微服务架构，你了解多少？",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "reasoning",
+    "reason": "边界case: 关于开头+问号 → Layer 2 慢模型"
+  },
+  {
+    "input": "把这个句子翻译成英文：他今天很高兴",
+    "expected_mode": "fast",
+    "expected_layer": "L0",
+    "expected_intent": "translation",
+    "reason": "边界case: 简单句子 → Layer 0 直接回复"
+  },
+  {
+    "input": "腾讯今天的股价",
+    "expected_mode": "fast",
+    "expected_layer": "L1",
+    "expected_intent": "chat",
+    "reason": "实时股价查询 → Layer 1 web_search"
+  },
+  {
+    "input": "今天有什么重要新闻",
+    "expected_mode": "fast",
+    "expected_layer": "L1",
+    "expected_intent": "chat",
+    "reason": "实时新闻查询 → Layer 1 web_search"
+  },
+  {
+    "input": "昨晚的足球比赛结果",
+    "expected_mode": "fast",
+    "expected_layer": "L1",
+    "expected_intent": "chat",
+    "reason": "实时体育比分 → Layer 1 web_search"
+  },
+  {
+    "input": "现在美元兑人民币汇率",
+    "expected_mode": "fast",
+    "expected_layer": "L1",
+    "expected_intent": "simple_qa",
+    "reason": "实时汇率查询 → Layer 1 web_search"
+  },
+  {
+    "input": "苹果公司最新财报",
+    "expected_mode": "fast",
+    "expected_layer": "L1",
+    "expected_intent": "chat",
+    "reason": "实时财经数据 → Layer 1 web_search"
+  },
+  {
+    "input": "黄金当前价格",
+    "expected_mode": "fast",
+    "expected_layer": "L1",
+    "expected_intent": "simple_qa",
+    "reason": "实时大宗商品价格 → Layer 1 web_search"
+  },
+  {
+    "input": "NBA最新比分",
+    "expected_mode": "fast",
+    "expected_layer": "L1",
+    "expected_intent": "chat",
+    "reason": "实时体育比分 → Layer 1 web_search"
+  }
+]
