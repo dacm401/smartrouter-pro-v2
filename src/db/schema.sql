@@ -291,3 +291,80 @@ CREATE INDEX IF NOT EXISTS idx_ta_status ON task_archives(status) WHERE status !
 CREATE INDEX IF NOT EXISTS idx_ta_command ON task_archives USING GIN (command);
 CREATE INDEX IF NOT EXISTS idx_ta_task_brief ON task_archives USING GIN (task_brief);
 CREATE INDEX IF NOT EXISTS idx_ta_state ON task_archives(state);
+
+-- ── Migration 010: Phase 3.0 Manager-Worker Runtime ────────────────────────────
+BEGIN;
+
+ALTER TABLE task_archives ADD COLUMN IF NOT EXISTS manager_decision JSONB;
+ALTER TABLE task_archives ADD COLUMN IF NOT EXISTS user_id VARCHAR(64);
+
+CREATE TABLE IF NOT EXISTS task_commands (
+  id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  task_id            VARCHAR(36),  -- FK to tasks(id) — NOTE: no FK constraint (tasks.id is VARCHAR)
+  archive_id         VARCHAR(36),   -- FK to task_archives(id) — no FK constraint
+  user_id            VARCHAR(64) NOT NULL,
+  issuer_role        VARCHAR(50) NOT NULL DEFAULT 'fast_manager',
+  command_type       VARCHAR(50) NOT NULL,
+  worker_hint        VARCHAR(50),
+  priority           VARCHAR(20) NOT NULL DEFAULT 'normal',
+  status             VARCHAR(20) NOT NULL DEFAULT 'queued',
+  payload_json       JSONB NOT NULL,
+  idempotency_key    VARCHAR(120),
+  timeout_sec        INTEGER,
+  issued_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  started_at         TIMESTAMPTZ,
+  finished_at        TIMESTAMPTZ,
+  error_message      TEXT
+);
+
+CREATE INDEX IF NOT EXISTS task_commands_task_id_idx ON task_commands(task_id, issued_at DESC);
+CREATE INDEX IF NOT EXISTS task_commands_archive_id_idx ON task_commands(archive_id, issued_at DESC);
+CREATE INDEX IF NOT EXISTS task_commands_status_idx ON task_commands(status);
+CREATE UNIQUE INDEX IF NOT EXISTS task_commands_idempotency_key_idx ON task_commands(idempotency_key) WHERE idempotency_key IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS task_worker_results (
+  id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  task_id            VARCHAR(36),
+  archive_id         VARCHAR(36),
+  command_id         UUID,
+  user_id            VARCHAR(64) NOT NULL,
+  worker_role        VARCHAR(50) NOT NULL,
+  result_type        VARCHAR(50) NOT NULL,
+  status             VARCHAR(20) NOT NULL DEFAULT 'completed',
+  summary            TEXT NOT NULL DEFAULT '',
+  result_json        JSONB NOT NULL DEFAULT '{}',
+  confidence         REAL,
+  tokens_input       INTEGER,
+  tokens_output      INTEGER,
+  cost_usd           REAL,
+  started_at         TIMESTAMPTZ,
+  completed_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  error_message      TEXT
+);
+
+CREATE INDEX IF NOT EXISTS task_worker_results_task_id_idx ON task_worker_results(task_id, completed_at DESC);
+CREATE INDEX IF NOT EXISTS task_worker_results_command_id_idx ON task_worker_results(command_id);
+
+COMMIT;
+
+-- ── Migration 011: Archive Events + Audit Trail ───────────────────────────────
+BEGIN;
+
+CREATE TABLE IF NOT EXISTS task_archive_events (
+  id          VARCHAR(36) PRIMARY KEY,
+  archive_id  VARCHAR(36),
+  task_id     VARCHAR(36),
+  event_type  VARCHAR(50) NOT NULL,
+  payload     JSONB NOT NULL DEFAULT '{}',
+  actor       VARCHAR(50),
+  user_id     VARCHAR(64),
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_tae_archive_id ON task_archive_events(archive_id, created_at ASC);
+CREATE INDEX IF NOT EXISTS idx_tae_task_id ON task_archive_events(task_id) WHERE task_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_tae_event_type ON task_archive_events(event_type, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tae_actor ON task_archive_events(actor, created_at DESC) WHERE actor IS NOT NULL;
+
+COMMIT;
+

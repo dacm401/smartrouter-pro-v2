@@ -1037,12 +1037,13 @@ export const TaskArchiveRepo = {
     command: TaskArchiveEntry["command"];
     user_input: string;
     constraints?: string[];
+    user_id?: string;
   }): Promise<TaskArchiveEntry> {
     const id = uuid();
     const result = await query(
       `INSERT INTO task_archives
-        (id, session_id, turn_id, command, user_input, constraints, status)
-       VALUES ($1, $2, $3, $4, $5, $6, 'pending')
+        (id, session_id, turn_id, command, user_input, constraints, status, user_id)
+       VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7)
        RETURNING *`,
       [
         id,
@@ -1051,6 +1052,7 @@ export const TaskArchiveRepo = {
         JSON.stringify(data.command),
         data.user_input,
         data.constraints ?? [],
+        data.user_id ?? null,
       ]
     );
     return mapTaskArchiveRow(result.rows[0]);
@@ -1142,6 +1144,18 @@ export const TaskArchiveRepo = {
       [sessionId]
     );
     return parseInt(result.rows[0]?.cnt ?? "0") > 0;
+  },
+
+  /** 看板视图：按 userId 查最近任务（看板/Archive 列表） */
+  async getRecent(userId: string, limit = 50): Promise<TaskArchiveEntry[]> {
+    const result = await query(
+      `SELECT * FROM task_archives
+       WHERE user_id=$1
+       ORDER BY created_at DESC
+       LIMIT $2`,
+      [userId, limit]
+    );
+    return result.rows.map(mapTaskArchiveRow);
   },
 };
 

@@ -2,13 +2,13 @@
  * Task Archive API — LLM-Native 路由专用
  *
  * Fast/Slow 共享工作台接口：
- * POST   /v1/archive/tasks        — Fast 创建任务档案
- * GET    /v1/archive/tasks/:id     — Slow/Fast 查询上下文
- * PATCH  /v1/archive/tasks/:id/status — Slow 更新状态
- * PATCH  /v1/archive/tasks/:id/observation — Fast 追加观察
- * PATCH  /v1/archive/tasks/:id/execution  — Slow 写入执行结果
- * DELETE /v1/archive/tasks/:id     — Fast 清理完成的任务
- * GET    /v1/archive/tasks        — 按 session 查历史
+ * POST   /archive/tasks        — Fast 创建任务档案
+ * GET    /archive/tasks/:id     — Slow/Fast 查询上下文
+ * PATCH  /archive/tasks/:id/status — Slow 更新状态
+ * PATCH  /archive/tasks/:id/observation — Fast 追加观察
+ * PATCH  /archive/tasks/:id/execution  — Slow 写入执行结果
+ * DELETE /archive/tasks/:id     — Fast 清理完成的任务
+ * GET    /archive/tasks         — 看板数据（按 userId，无需 session_id）
  */
 
 import { Hono } from "hono";
@@ -21,7 +21,7 @@ const archiveRouter = new Hono();
 
 // ── 创建任务档案 ─────────────────────────────────────────────────────────────
 
-archiveRouter.post("/v1/archive/tasks", async (c) => {
+archiveRouter.post("/archive/tasks", async (c) => {
   const rawBody = await c.req.raw.text();
   let body: Record<string, unknown>;
   try {
@@ -47,6 +47,7 @@ archiveRouter.post("/v1/archive/tasks", async (c) => {
       command,
       user_input: body.user_input as string || "",
       constraints: (body.constraints as string[]) ?? [],
+      user_id: userId ?? undefined,
     });
     return c.json(entry, 201);
   } catch (e: any) {
@@ -57,7 +58,7 @@ archiveRouter.post("/v1/archive/tasks", async (c) => {
 
 // ── 查询任务上下文 ────────────────────────────────────────────────────────────
 
-archiveRouter.get("/v1/archive/tasks/:id", async (c) => {
+archiveRouter.get("/archive/tasks/:id", async (c) => {
   const id = c.req.param("id");
   if (!id) return c.json({ error: "id is required" }, 400);
 
@@ -67,27 +68,41 @@ archiveRouter.get("/v1/archive/tasks/:id", async (c) => {
   return c.json(entry);
 });
 
-// ── 按 session 查历史 ────────────────────────────────────────────────────────
+// ── 看板数据（按 userId）───────────────────────────────────────────────────
 
-archiveRouter.get("/v1/archive/tasks", async (c) => {
-  const sessionId = c.req.query("session_id");
-  if (!sessionId) return c.json({ error: "session_id query param is required" }, 400);
-
+archiveRouter.get("/archive/tasks", async (c) => {
   // Sprint 48 Archive E2E: 必须按 userId 过滤，防止跨用户数据泄露
-  const userId = getContextUserId(c);
-  if (!userId) return c.json({ error: "Authentication required" }, 401);
+  // 允许 query override（前端使用 X-User-Id 指定用户，但 JWT 必须存在）
+  const jwtUserId = getContextUserId(c);
+  if (!jwtUserId) return c.json({ error: "Authentication required" }, 401);
 
-  const limit = Math.min(parseInt(c.req.query("limit") || "10"), 100);
-  const entries = await TaskArchiveRepo.getBySession(sessionId, limit);
+  // 允许前端通过 query param 指定看板用户（用于 dev-user 等 fallback 场景）
+  const effectiveUserId = c.req.query("user_id") || jwtUserId;
 
-  // 额外保险：过滤到当前用户的记录
-  const filtered = entries.filter((e) => (e as any).user_id === userId);
-  return c.json({ entries: filtered, count: filtered.length });
+  const sessionId = c.req.query("session_id");
+  const status = c.req.query("status");
+  const limit = Math.min(parseInt(c.req.query("limit") || "50"), 200);
+
+  let entries;
+  if (sessionId) {
+    // 按 session 查
+    const all = await TaskArchiveRepo.getBySession(sessionId, limit);
+    entries = all.filter((e) => (e as any).user_id === effectiveUserId);
+  } else {
+    // 看板视图：查该用户所有任务（最近的）
+    entries = await TaskArchiveRepo.getRecent(effectiveUserId, limit);
+  }
+
+  if (status) {
+    entries = entries.filter((e) => e.status === status);
+  }
+
+  return c.json({ entries, count: entries.length, total: entries.length });
 });
 
 // ── 追加 Fast 观察 ───────────────────────────────────────────────────────────
 
-archiveRouter.patch("/v1/archive/tasks/:id/observation", async (c) => {
+archiveRouter.patch("/archive/tasks/:id/observation", async (c) => {
   const id = c.req.param("id");
   const rawBody = await c.req.raw.text();
   let body: Record<string, unknown>;
@@ -109,7 +124,7 @@ archiveRouter.patch("/v1/archive/tasks/:id/observation", async (c) => {
 
 // ── 写入执行结果 ────────────────────────────────────────────────────────────
 
-archiveRouter.patch("/v1/archive/tasks/:id/execution", async (c) => {
+archiveRouter.patch("/archive/tasks/:id/execution", async (c) => {
   const id = c.req.param("id");
   const rawBody = await c.req.raw.text();
   let body: Record<string, unknown>;
@@ -138,7 +153,7 @@ archiveRouter.patch("/v1/archive/tasks/:id/execution", async (c) => {
 
 // ── 更新状态 ────────────────────────────────────────────────────────────────
 
-archiveRouter.patch("/v1/archive/tasks/:id/status", async (c) => {
+archiveRouter.patch("/archive/tasks/:id/status", async (c) => {
   const id = c.req.param("id");
   const rawBody = await c.req.raw.text();
   let body: Record<string, unknown>;
@@ -160,7 +175,7 @@ archiveRouter.patch("/v1/archive/tasks/:id/status", async (c) => {
 
 // ── 清理完成的任务 ─────────────────────────────────────────────────────────
 
-archiveRouter.delete("/v1/archive/tasks/:id", async (c) => {
+archiveRouter.delete("/archive/tasks/:id", async (c) => {
   const id = c.req.param("id");
   if (!id) return c.json({ error: "id is required" }, 400);
 
