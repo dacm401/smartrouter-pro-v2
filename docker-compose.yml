@@ -18,6 +18,39 @@ services:
       timeout: 5s
       retries: 5
 
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Console UI
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "mc alias set local http://localhost:9000 minioadmin minioadmin && mc ready local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 使用 MinIO bucket 初始化工具
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 minioadmin minioadmin;
+      mc mb local/smartrouter-archives --ignore-existing;
+      mc anonymous set download local/smartrouter-archives;
+      exit 0;
+      "
+    volumes:
+      - minio_data:/data
+
   backend:
     build:
       context: .
@@ -26,14 +59,25 @@ services:
     ports:
       - "3001:3001"
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@172.18.0.2:5432/smartrouter
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/smartrouter
       NODE_ENV: production
       ALLOW_DEV_FALLBACK: "true"
       SLOW_MODEL: "Qwen/Qwen2.5-72B-Instruct"
-      # 显式覆盖：从 env_file 读取，确保 LLM 调用可用
       FAST_MODEL: "Qwen/Qwen2.5-7B-Instruct"
+      # S3 / MinIO 配置（Phase 5）
+      STORAGE_BACKEND: "s3"
+      S3_BUCKET: "smartrouter-archives"
+      S3_REGION: "us-east-1"
+      S3_ENDPOINT: "http://minio:9000"
+      S3_ACCESS_KEY: "minioadmin"
+      S3_SECRET_KEY: "minioadmin"
+      S3_PREFIX: "archives/"
+      # TTL eviction（天）
+      ARCHIVE_TTL_DAYS: "30"
     depends_on:
       postgres:
+        condition: service_healthy
+      minio:
         condition: service_healthy
     env_file:
       - .env
@@ -49,3 +93,4 @@ services:
 
 volumes:
   postgres_data:
+  minio_data:

@@ -39,3 +39,10 @@ export type { S3ArchiveConfig } from "./s3-archive-storage";
 
 // Export PG implementations
 export { PGArchiveStorage, PGArchiveQuery } from "./pg-archive-storage";
+
+// Export TTL eviction
+export { runEviction, startEvictionScheduler } from "./ttl-eviction";
+export type { EvictionConfig, EvictionResult } from "./ttl-eviction";
+
+// Export storage registry (singleton getter)
+export { getIArchiveStorage, getStorageType } from "./storage-registry";
