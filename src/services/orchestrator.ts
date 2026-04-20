@@ -504,9 +504,26 @@ export async function orchestrator(input: OrchestratorInput): Promise<Orchestrat
       await TaskArchiveRepo.create({
         task_id: taskId,
         session_id,
-        command,
+        user_id,
+        decision: {
+          schema_version: "manager_decision_v1",
+          decision_type: "delegate_to_slow",
+          routing_layer: "L2",
+          reason: "Complex task requiring deep analysis",
+          confidence: 0.8,
+          needs_archive: true,
+          command: {
+            command_type: "delegate_analysis",
+            task_type: command.action,
+            task_brief: command.task,
+            constraints: command.constraints,
+            goal: command.task,
+            priority: command.priority ?? "normal",
+          },
+        },
         user_input: message,
-        constraints: command.constraints,
+        task_brief: command.task,
+        goal: command.task,
       });
     } catch (e: any) {
       console.warn("[orchestrator] TaskArchive create failed:", e.message);
@@ -554,7 +571,7 @@ export async function triggerSlowModelBackground(input: SlowModelBackgroundInput
 
   try {
     // Step 1: 更新 Archive 状态为 running
-    await TaskArchiveRepo.updateStatus(taskId, "running");
+    await TaskArchiveRepo.updateState(taskId, "running");
 
     // Step 2: 查历史档案获取相关上下文
     const recentArchives = await DelegationArchiveRepo.getRecentByUser(user_id, 3);
@@ -605,13 +622,13 @@ export async function triggerSlowModelBackground(input: SlowModelBackgroundInput
     const totalMs = Date.now() - startTime;
 
     // Step 5: 写入 Archive 执行结果
-    await TaskArchiveRepo.writeExecution({
-      id: taskId,
+    await TaskArchiveRepo.setSlowExecution(taskId, {
       status: "done",
       result: slowResult,
       started_at: new Date(startTime).toISOString(),
       deviations: [],
     });
+    await TaskArchiveRepo.updateState(taskId, "completed");
 
     // Step 6: 写入 delegation_archive（兼容旧接口，供 hasPending 查询使用）
     await DelegationArchiveRepo.create({
@@ -644,11 +661,11 @@ export async function triggerSlowModelBackground(input: SlowModelBackgroundInput
 
   } catch (e: any) {
     console.error(`[orchestrator] Slow model failed for task ${taskId}:`, e.message);
-    await TaskArchiveRepo.writeExecution({
-      id: taskId,
+    await TaskArchiveRepo.setSlowExecution(taskId, {
       status: "failed",
       errors: [e.message],
     }).catch(() => {});
+    await TaskArchiveRepo.updateState(taskId, "failed").catch(() => {});
     await DelegationArchiveRepo.fail(taskId, e.message).catch(() => {});
     await TaskRepo.setStatus(taskId, "failed").catch(() => {});
     await TaskRepo.createTrace({
@@ -676,13 +693,22 @@ export function inferRoutingLayer(result: OrchestratorResult): RoutingLayer {
 // ── SSE Event（含 routing_layer Phase 2.0）───────────────────────────────────
 
 export interface SSEEvent {
-  type: "status" | "result" | "error" | "done" | "chunk" | "fast_reply";
-  stream: string;
+  type: "status" | "result" | "error" | "done" | "chunk" | "fast_reply"
+       | "worker_completed" | "manager_synthesized"; // Phase 3.0
+  stream?: string; // Phase 3.0 events may not have stream
   /** Phase 2.0: 路由分层（L0/L1/L2/L3） */
   routing_layer?: RoutingLayer;
   /** Phase 1.5: Clarifying 事件可选字段 */
   options?: string[];
   question_id?: string;
+  /** Phase 3.0: worker_completed 事件字段 */
+  task_id?: string;
+  command_id?: string;
+  worker_type?: string;
+  summary?: string;
+  /** Phase 3.0: manager_synthesized 事件字段 */
+  final_content?: string;
+  confidence?: number;
 }
 
 /**
@@ -748,11 +774,11 @@ export async function* pollArchiveAndYield(
 
     if (task.status === "done") {
       if (!task.delivered) {
-        const execution = task.slow_execution ?? {};
+        const execution: Record<string, unknown> = task.slow_execution ?? {};
         const workerResult = typeof execution.result === "string"
           ? execution.result
           : "";
-        const workerConfidence = execution.confidence ?? 0.7;
+        const workerConfidence = (execution.confidence as number) ?? 0.7;
 
         // Phase 3.0: 写入 worker_completed 事件到 DB
         try {
@@ -766,7 +792,7 @@ export async function* pollArchiveAndYield(
               summary: workerResult.substring(0, 200),
               confidence: workerConfidence,
             },
-            actor: execution.worker_role ?? "slow_worker",
+            actor: (execution.worker_role as string) ?? "slow_worker",
           });
         } catch (e: any) {
           console.warn("[pollArchiveAndYield] worker_completed event write failed:", e.message);
@@ -825,7 +851,8 @@ export async function* pollArchiveAndYield(
     }
 
     if (task.status === "failed") {
-      const errors = task.slow_execution?.errors ?? [];
+      const exec = task.slow_execution as Record<string, unknown> | null;
+      const errors = (Array.isArray(exec?.errors) ? exec.errors : []) as string[];
       yield { type: "error", stream: `任务执行失败: ${errors[0] ?? "Unknown error"}`, routing_layer: "L2" };
       break;
     }

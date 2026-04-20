@@ -7,8 +7,15 @@
 
 import { createHash } from "crypto";
 
-// ── Re-export LocalArchiveConfig from local-archive-store ────────────────────
-export type { LocalArchiveConfig } from "./local-archive-store.js";
+// ── Local Storage Config ──────────────────────────────────────────────────────
+
+/** 本地文件系统存储配置 */
+export interface LocalArchiveConfig {
+  basePath: string;
+  maxFileSize?: number;   // 最大单个文件大小（字节）
+  compress?: boolean;     // 是否压缩存储
+  maxAgeDays?: number;    // 自动清理超过N天的档案
+}
 
 // ── Core Types ────────────────────────────────────────────────────────────────
 

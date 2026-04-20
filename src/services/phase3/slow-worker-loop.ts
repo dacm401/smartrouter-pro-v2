@@ -166,7 +166,7 @@ async function executeDelegateCommand(
     await TaskCommandRepo.updateStatus(id, "completed", { finished_at: new Date() });
     // 更新 task_archives status = done（供 pollArchiveAndYield 轮询感知）
     // 注意：pollArchiveAndYield 读的是 status 字段，不是 state 字段
-    await TaskArchiveRepo.updateStatus(archive_id, "done");
+    await TaskArchiveRepo.updateState(archive_id, "done");
     // 更新 task_archives state = done（语义对齐）
     await TaskArchiveRepo.updateState(archive_id, "done");
 
@@ -178,7 +178,7 @@ async function executeDelegateCommand(
         finished_at: new Date(),
         error_message: err.message,
       });
-      await TaskArchiveRepo.updateStatus(archive_id, "failed");
+      await TaskArchiveRepo.updateState(archive_id, "failed");
       await TaskArchiveRepo.updateState(archive_id, "failed");
       await TaskArchiveRepo.setSlowExecution(archive_id, {
         result: "",

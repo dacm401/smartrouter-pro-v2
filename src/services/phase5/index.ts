@@ -9,16 +9,17 @@
 
 // Re-export local implementation (for backward compatibility)
 export {
-  LocalArchiveStore,
   LocalArchiveStorage,
-  LocalArchiveConfig,
 } from "./local-archive-store";
-
-// Re-export legacy types (for backward compatibility)
 export type {
-  ArchiveStore,
-  ArchiveStoreType,
-} from "./local-archive-store";
+  LocalArchiveConfig,
+} from "./storage-backend.js";
+
+// Re-export IArchiveStorage as ArchiveStore for backward compatibility
+export type {
+  IArchiveStorage as ArchiveStore,
+  StorageBackendType as ArchiveStoreType,
+} from "./storage-backend.js";
 
 // Re-export ArchiveDocument (shared type)
 export type {

@@ -113,7 +113,7 @@ export function validateManagerDecision(
     console.warn("[ManagerDecision] validation failed:", result.error.message);
     return null;
   }
-  return result.data;
+  return result.data as ManagerDecision;
 }
 
 /**

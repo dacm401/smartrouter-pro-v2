@@ -301,7 +301,7 @@ chatRouter.post("/chat", async (c) => {
 
         const response: ChatResponse = {
           message: llmNativeResult.message ?? "",
-          decision: llmNativeResult.decision ?? {
+          decision: {
             id: uuid(),
             user_id: userId,
             session_id: sessionId,
@@ -310,14 +310,29 @@ chatRouter.post("/chat", async (c) => {
             routing: {
               router_version: "llm_native_v1",
               scores: { fast: 1, slow: 0 },
-              confidence: 1.0,
+              confidence: llmNativeResult.decision?.confidence ?? 1.0,
               selected_model: config.fastModel,
               selected_role: "fast",
-              selection_reason: "llm_native_fallback",
+              selection_reason: "llm_native_v1",
               fallback_model: config.slowModel,
-              routing_layer: "L0",
+              routing_layer: llmNativeResult.decision?.routing_layer ?? "L0",
             },
-          },
+            context: {
+              original_tokens: 0,
+              compressed_tokens: 0,
+              compression_level: "none",
+              compression_ratio: 1.0,
+            },
+            execution: {
+              model_used: config.fastModel,
+              input_tokens: 0,
+              output_tokens: 0,
+              total_cost_usd: 0,
+              latency_ms: Date.now() - startTime,
+              did_fallback: false,
+              response_text: llmNativeResult.message ?? "",
+            },
+          } as unknown as DecisionRecord,
           clarifying: llmNativeResult.decision?.decision_type === "ask_clarification" ? llmNativeResult.clarifying : undefined,
           task_id: taskId,
           delegation: llmNativeResult.delegation

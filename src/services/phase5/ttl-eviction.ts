@@ -207,8 +207,8 @@ async function listExpiredPG(
     : `SELECT id FROM task_archive WHERE updated_at < $1`;
 
   const args = userId ? [userId, cutoff.toISOString()] : [cutoff.toISOString()];
-  const result = await query<{ id: string }>(sql, args);
-  return result.rows;
+  const result = await query(sql, args);
+  return result.rows as { id: string }[];
 }
 
 // ── Schedule ─────────────────────────────────────────────────────────────────

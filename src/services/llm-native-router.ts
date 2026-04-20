@@ -25,6 +25,7 @@ import type {
   ClarifyQuestion,
   CommandPayload,
   ExecutionPlan,
+  WorkerHint,
 } from "../types/index.js";
 import { parseAndValidate } from "../orchestrator/decision-validator.js";
 import { taskPlanner } from "./task-planner.js";
@@ -322,10 +323,9 @@ async function routeByDecision(
       return {
         message: clarifyingMessage,
         decision,
-        routing_layer: "L0",
+        routing_layer: "L0" as RoutingLayer,
         decision_type: "ask_clarification",
         clarifying: cq,
-        clarifying_task_id: clarifyingTaskId,
         archive_id: clarifyingTaskId,
         raw_manager_output: raw,
       };
@@ -349,7 +349,7 @@ async function routeByDecision(
             hasPII: false,
             ageHours: 0,
           };
-          const classification = pl.DataClassifier.classify(command?.task_brief ?? "", classificationCtx);
+          const classification = new pl.DataClassifier().classify(command?.task_brief ?? "", classificationCtx);
           const permissionCtx = {
             sessionId: session_id,
             userId: user_id,
@@ -390,7 +390,7 @@ async function routeByDecision(
               processedCommand = {
                 ...command,
                 task_brief: redactedBrief.content as string,
-                worker_hint: redactedWorkerHint.content as string,
+                worker_hint: redactedWorkerHint.content as WorkerHint,
               };
 
               console.log("[llm-native-router] Phase 4.2 Redaction Applied:", {
@@ -499,7 +499,7 @@ async function routeByDecision(
             hasPII: false,
             ageHours: 0,
           };
-          const classification = pl.DataClassifier.classify(command?.task_brief ?? "", classificationCtx);
+          const classification = new pl.DataClassifier().classify(command?.task_brief ?? "", classificationCtx);
           const permissionCtx = {
             sessionId: session_id,
             userId: user_id,
@@ -540,7 +540,7 @@ async function routeByDecision(
               processedCommand = {
                 ...command,
                 task_brief: redactedBrief.content as string,
-                worker_hint: redactedWorkerHint.content as string,
+                worker_hint: redactedWorkerHint.content as WorkerHint,
               };
 
               console.log("[llm-native-router] Phase 4.2 Redaction Applied (execute_task):", {

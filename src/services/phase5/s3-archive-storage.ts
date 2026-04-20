@@ -206,10 +206,13 @@ export class S3ArchiveStorage implements IArchiveStorage {
 
     if (!listed.Contents) return [];
 
-    return listed.Contents
-      .map((obj) => obj.Key)
-      .filter((k): k is string => !!k)
-      .map((key) => this.downloadObject(key))
+    const docs = await Promise.all(
+      listed.Contents
+        .map((obj) => obj.Key)
+        .filter((k): k is string => !!k)
+        .map((key) => this.downloadObject(key))
+    );
+    return docs
       .filter((doc): doc is ArchiveDocument => doc !== null)
       .sort(
         (a, b) =>
