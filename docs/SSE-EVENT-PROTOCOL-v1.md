@@ -21,24 +21,32 @@
 
 ```
 Client → POST /chat { use_llm_native_routing: true, stream: true }
-Server → manager_decision  [立即]
+Server → manager_decision       [立即]
          ↓（如有 delegation）
-Server → command_issued     [立即]
-Server → status             [30s/60s/120s 安抚，每节点一次]
-Server → result             [status=done 时推送]
-Server → done               [流结束]
+Server → archive_written         [立即，archive 写入后]
+Server → worker_started          [立即，Worker 拿到 command]
+Server → command_issued          [立即]
+Server → status                  [30s/60s/120s 安抚，每节点一次]
+Server → worker_completed        [Worker 执行完成]
+Server → manager_synthesized     [Manager 合成最终输出]
+Server → result                  [最终文本]
+Server → done                    [流结束]
 ```
 
-### 事件清单
+### 事件清单（Phase 3.0 Sprint 补充）
 
-| 事件名 | type 值 | stream 字段 | routing_layer | 触发时机 |
+| 事件名 | type 值 | stream/字段 | routing_layer | 触发时机 |
 |--------|---------|------------|--------------|---------|
-| `manager_decision` | `"manager_decision"` | Manager 回复文本（安抚） | `L0` | Manager 决策后立即 |
-| `clarifying_needed` | `"clarifying_needed"` | 无（用 question_text） | `L0` | decision_type=`ask_clarification` |
-| `command_issued` | `"command_issued"` | 无 | 同 manager_decision | decision_type ∈ {`delegate_to_slow`, `execute_task`} |
-| `status` | `"status"` | 安抚文本 | `L2` | pollArchiveAndYield 推送，30s/60s/120s 节点 |
-| `result` | `"result"` | 慢模型完成文本 | `L2` | task.status=`done` |
-| `error` | `"error"` | 错误描述 | `L2` | task.status=`failed` |
+| `manager_decision` | `"manager_decision"` | message 安抚文本 | `L0` | Manager 决策后立即 |
+| `clarifying_needed` | `"clarifying_needed"` | question_text/options | `L0` | decision_type=`ask_clarification` |
+| `archive_written` | `"archive_written"` | task_id/archive_id/decision_type | 同 manager_decision | archive 创建完成后（来自 task_archive_events.archive_created） |
+| `worker_started` | `"worker_started"` | task_id/command_id/worker_role | 同 manager_decision | Worker 拿到 command 后立即（来自 task_archive_events.worker_started） |
+| `command_issued` | `"command_issued"` | task_id | 同 manager_decision | decision_type ∈ {`delegate_to_slow`, `execute_task`} |
+| `status` | `"status"` | stream 安抚文本 | `L2` | pollArchiveAndYield，30s/60s/120s 节点 |
+| `worker_completed` | `"worker_completed"` | task_id/command_id/worker_type/summary | `L2` | Worker 执行完成（来自 task_archive_events.worker_completed） |
+| `manager_synthesized` | `"manager_synthesized"` | task_id/final_content/confidence | `L2` | Manager 合成最终输出后（来自 task_archive_events.manager_synthesized） |
+| `result` | `"result"` | stream 最终文本 | `L2` | task.status=`done` |
+| `error` | `"error"` | stream 错误描述 | `L2` | task.status=`failed` |
 | `done` | `"done"` | **无** | 同 manager_decision | 流结束，无 payload |
 
 ### Payload 结构（JSON）
@@ -50,11 +58,23 @@ Server → done               [流结束]
 // clarifying_needed
 { type: "clarifying_needed", routing_layer: string, question_text: string, options: string[], question_id: string }
 
+// archive_written（Phase 3.0 Sprint 新增）
+{ type: "archive_written", task_id: string, archive_id: string, decision_type: string, routing_layer: string, timestamp: string }
+
+// worker_started（Phase 3.0 Sprint 新增）
+{ type: "worker_started", task_id: string, command_id: string, worker_role: string, routing_layer: string, timestamp: string }
+
 // command_issued
 { type: "command_issued", task_id: string, routing_layer: string }
 
 // status
 { type: "status", stream: string, routing_layer: "L2" }
+
+// worker_completed（Phase 3.0 Sprint 新增）
+{ type: "worker_completed", task_id: string, command_id: string, worker_type: string, summary: string, routing_layer: string }
+
+// manager_synthesized（Phase 3.0 Sprint 新增）
+{ type: "manager_synthesized", task_id: string, final_content: string, confidence: number, routing_layer: string }
 
 // result
 { type: "result", stream: string, routing_layer: "L2" }
@@ -122,6 +142,7 @@ Server → done        [流结束，无 stream]
 |------|------|------|
 | 2026-04-19 | 初始冻结（Phase 3.0 SSE v1） | Sprint 39-C |
 | 2026-04-19 | Legacy done 事件移除 `stream` 字段 | 与 Phase 3.0 对齐，统一 done 语义 |
+| 2026-04-20 | 新增 archive_written/worker_started/worker_completed/manager_synthesized 事件 | Sprint 45 Phase 3.0 补全 |
 
 ---
 
@@ -151,14 +172,30 @@ for await (const line of sseStream) {
     case "clarifying":
       // 显示澄清 UI
       break;
+    case "archive_written":
+      // Archive 已写入，开始 Worker 进度展示
+      console.log("Archive created:", event.archive_id);
+      break;
+    case "worker_started":
+      // Worker 开始执行，显示 spinner
+      console.log("Worker started:", event.worker_role);
+      break;
     case "command_issued":
-      // 显示 loading spinner
+      // Command 已下发
       break;
     case "status":
       // 显示安抚文本
       break;
+    case "worker_completed":
+      // Worker 完成，显示摘要
+      console.log("Worker completed:", event.summary);
+      break;
+    case "manager_synthesized":
+      // Manager 合成完成，显示最终回复（优先级高于 result）
+      showFinalContent(event.final_content);
+      break;
     case "result":
-      // 显示慢模型回复
+      // 显示慢模型回复（manager_synthesized 已有则可跳过）
       break;
     case "error":
       // 显示错误提示
@@ -169,6 +206,10 @@ for await (const line of sseStream) {
   }
 }
 ```
+
+> **优先级说明**：`manager_synthesized` 和 `result` 都携带最终回复文本。
+> 建议优先使用 `manager_synthesized.final_content`（Manager 合成后更精炼），
+> `result` 作为 fallback。
 
 > 注意：`manager_decision` 和 `fast_reply` 语义相同，可合并处理；`clarifying_needed` 和 `clarifying` 语义相同，可合并处理。
 

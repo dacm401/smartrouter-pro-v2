@@ -190,6 +190,30 @@ chatRouter.post("/chat", async (c) => {
 
             // Step 3: 有 delegation → 轮询 Worker 结果
             if (llmNativeResult.delegation) {
+              // Phase 3.0: 推送 archive_written 事件（archive 创建完成后立即发）
+              if (llmNativeResult.archive_id) {
+                await s.write(`data: ${JSON.stringify({
+                  type: "archive_written",
+                  task_id: taskId,
+                  archive_id: llmNativeResult.archive_id,
+                  decision_type: llmNativeResult.decision_type ?? "delegate_to_slow",
+                  routing_layer: llmNativeResult.routing_layer,
+                  timestamp: new Date().toISOString(),
+                })}\n\n`);
+              }
+
+              // Phase 3.0: 推送 worker_started 事件（Worker 拿到 command 后立即发）
+              if (llmNativeResult.command_id) {
+                await s.write(`data: ${JSON.stringify({
+                  type: "worker_started",
+                  task_id: taskId,
+                  command_id: llmNativeResult.command_id,
+                  worker_role: llmNativeResult.decision_type === "execute_task" ? "execute_worker" : "slow_worker",
+                  routing_layer: llmNativeResult.routing_layer,
+                  timestamp: new Date().toISOString(),
+                })}\n\n`);
+              }
+
               // 推送 command_issued 事件
               await s.write(`data: ${JSON.stringify({
                 type: "command_issued",

@@ -309,6 +309,108 @@ export const TaskWorkerResultRepo = {
   },
 } as const;
 
+// ── TaskArchiveEventRepo ───────────────────────────────────────────────────────
+
+export type ArchiveEventType =
+  // Phase 3.0 SSE events
+  | "archive_created"
+  | "worker_started"
+  | "worker_completed"
+  | "manager_synthesized"
+  // Phase 4 Audit events
+  | "permission_denied"
+  | "redaction_applied"
+  | "approval_requested"
+  | "approval_granted"
+  | "approval_rejected";
+
+export interface TaskArchiveEventRecord {
+  id: string;
+  archive_id: string;
+  task_id: string | null;
+  event_type: ArchiveEventType;
+  payload: Record<string, unknown>;
+  actor: string | null;
+  user_id: string | null;
+  created_at: string;
+}
+
+export const TaskArchiveEventRepo = {
+  /**
+   * 写入 Archive 生命周期事件。
+   * Phase 3.0 SSE：archive_written / worker_started / worker_completed / manager_synthesized
+   * Phase 4 Audit：permission_denied / redaction_applied / approval_requested 等
+   */
+  async create(input: {
+    archive_id: string;
+    task_id?: string;
+    event_type: ArchiveEventType;
+    payload?: Record<string, unknown>;
+    actor?: string;
+    user_id?: string;
+  }): Promise<{ id: string }> {
+    const id = uuid();
+    await query(
+      `INSERT INTO task_archive_events
+        (id, archive_id, task_id, event_type, payload, actor, user_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [
+        id,
+        input.archive_id,
+        input.task_id ?? null,
+        input.event_type,
+        JSON.stringify(input.payload ?? {}),
+        input.actor ?? null,
+        input.user_id ?? null,
+      ]
+    );
+    return { id };
+  },
+
+  /**
+   * 按 archive_id 读取完整事件时间线（用于调试 / 前端 timeline 展示）。
+   */
+  async listByArchive(archiveId: string): Promise<TaskArchiveEventRecord[]> {
+    const result = await query(
+      `SELECT * FROM task_archive_events
+       WHERE archive_id = $1
+       ORDER BY created_at ASC`,
+      [archiveId]
+    );
+    return result.rows as TaskArchiveEventRecord[];
+  },
+
+  /**
+   * 按 task_id 读取事件（查找某个任务的所有相关事件）。
+   */
+  async listByTask(taskId: string): Promise<TaskArchiveEventRecord[]> {
+    const result = await query(
+      `SELECT * FROM task_archive_events
+       WHERE task_id = $1
+       ORDER BY created_at ASC`,
+      [taskId]
+    );
+    return result.rows as TaskArchiveEventRecord[];
+  },
+
+  /**
+   * 按事件类型过滤（审计查询：permission_denied / approval_* 等）。
+   */
+  async listByEventType(
+    eventType: ArchiveEventType,
+    limit = 100
+  ): Promise<TaskArchiveEventRecord[]> {
+    const result = await query(
+      `SELECT * FROM task_archive_events
+       WHERE event_type = $1
+       ORDER BY created_at DESC
+       LIMIT $2`,
+      [eventType, limit]
+    );
+    return result.rows as TaskArchiveEventRecord[];
+  },
+} as const;
+
 // ── 行列映射 ──────────────────────────────────────────────────────────────────
 
 function mapCommandRow(row: Record<string, unknown>): TaskCommandRecord {

@@ -19,11 +19,79 @@ import type { ChatMessage } from "../types/index.js";
 import { callModelFull } from "../models/model-gateway.js";
 import { callOpenAIWithOptions } from "../models/providers/openai.js";
 import type { ModelResponse } from "../models/providers/base-provider.js";
-import { TaskRepo, MemoryEntryRepo, DelegationArchiveRepo, TaskArchiveRepo } from "../db/repositories.js";
+import { TaskRepo, MemoryEntryRepo, DelegationArchiveRepo } from "../db/repositories.js";
+import { TaskArchiveRepo } from "../db/task-archive-repo.js";
 import { config } from "../config.js";
 import { runRetrievalPipeline, buildCategoryAwareMemoryText } from "./memory-retrieval.js";
 import { FAST_MODEL_TOOLS } from "./fast-model-tools.js";
 import { toolExecutor } from "../tools/executor.js";
+
+// ── Manager Synthesis ─────────────────────────────────────────────────────────
+
+const MANAGER_SYNTHESIS_PROMPT = {
+  zh: (workerResult: string) =>
+`用户的问题已经被执行专家分析完毕。
+下面是执行专家的原始分析结果：
+
+---
+${workerResult}
+---
+
+请将以上分析结果整合成一段自然、简洁的回复，直接面向用户。
+要求：
+- 不重复"以下是分析结果"等废话
+- 直接用自然的段落或要点呈现结论
+- 如果有多个发现，按重要性排序
+- 如果有数据或引用，说明来源
+- 保持与用户对话的语气，不要写成报告`,
+  en: (workerResult: string) =>
+`The user's question has been analyzed by the execution specialist.
+Here is the specialist's raw analysis:
+
+---
+${workerResult}
+---
+
+Please synthesize this into a natural, concise response for the user.
+Requirements:
+- Don't repeat filler like "Here are the analysis results"
+- Present conclusions naturally as paragraphs or bullet points
+- If multiple findings, order by importance
+- If data or citations, mention the source
+- Keep a conversational tone, not a report style`,
+};
+
+async function synthesizeManagerOutput(
+  taskId: string,
+  workerResult: string,
+  confidence: number,
+  lang: "zh" | "en"
+): Promise<string | null> {
+  try {
+    // 读取原始 archive（获取用户原始输入）
+    const archive = await TaskArchiveRepo.getById(taskId);
+    if (!archive) return workerResult;
+
+    const userInput = archive.user_input ?? "";
+
+    const systemPrompt = lang === "zh"
+      ? "你是 SmartRouter Pro 的管理模型（Manager）。负责把执行专家的结果整合成最终回复。"
+      : "You are SmartRouter Pro's Manager model. Your job is to synthesize execution results into the final user-facing response.";
+
+    const userPrompt = MANAGER_SYNTHESIS_PROMPT[lang](workerResult);
+
+    const messages: ChatMessage[] = [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: `用户原始问题：${userInput}\n\n${userPrompt}` },
+    ];
+
+    const resp = await callModelFull(config.fastModel, messages);
+    return resp.content.trim() || workerResult;
+  } catch (e: any) {
+    console.warn("[synthesizeManagerOutput] Manager synthesis failed:", e.message);
+    return null;
+  }
+}
 
 // ── 类型定义 ──────────────────────────────────────────────────────────────────
 
@@ -680,10 +748,75 @@ export async function* pollArchiveAndYield(
 
     if (task.status === "done") {
       if (!task.delivered) {
-        const result = task.slow_execution?.result ?? "";
+        const execution = task.slow_execution ?? {};
+        const workerResult = typeof execution.result === "string"
+          ? execution.result
+          : "";
+        const workerConfidence = execution.confidence ?? 0.7;
+
+        // Phase 3.0: 写入 worker_completed 事件到 DB
+        try {
+          const { TaskArchiveEventRepo } = await import("../db/task-archive-repo.js");
+          await TaskArchiveEventRepo.create({
+            archive_id: taskId,
+            task_id: taskId,
+            event_type: "worker_completed",
+            payload: {
+              worker_role: execution.worker_role ?? "slow_worker",
+              summary: workerResult.substring(0, 200),
+              confidence: workerConfidence,
+            },
+            actor: execution.worker_role ?? "slow_worker",
+          });
+        } catch (e: any) {
+          console.warn("[pollArchiveAndYield] worker_completed event write failed:", e.message);
+        }
+
+        // Phase 3.0: 先推送 worker_completed SSE 事件
+        yield {
+          type: "worker_completed",
+          task_id: taskId,
+          command_id: taskId,
+          worker_type: execution.worker_role as any ?? "slow_worker",
+          summary: workerResult.substring(0, 200),
+          routing_layer: "L2",
+        };
+
+        // Phase 3.0: Manager Synthesis — Manager 读取 Worker 结果，合成最终输出
+        let synthesizedContent = workerResult;
+        try {
+          const synthesized = await synthesizeManagerOutput(taskId, workerResult, workerConfidence, lang);
+          if (synthesized) {
+            synthesizedContent = synthesized;
+            // 写入 manager_synthesized 事件
+            const { TaskArchiveEventRepo: EventRepo } = await import("../db/task-archive-repo.js");
+            await EventRepo.create({
+              archive_id: taskId,
+              task_id: taskId,
+              event_type: "manager_synthesized",
+              payload: {
+                final_content_length: synthesized.length,
+                confidence: workerConfidence,
+              },
+              actor: "fast_manager",
+            });
+            // 推送 manager_synthesized SSE 事件
+            yield {
+              type: "manager_synthesized",
+              task_id: taskId,
+              final_content: synthesized,
+              confidence: workerConfidence,
+              routing_layer: "L2",
+            };
+          }
+        } catch (e: any) {
+          console.warn("[pollArchiveAndYield] Manager synthesis failed, using raw result:", e.message);
+        }
+
+        // Phase 3.0: 推送 result 文本事件
         yield {
           type: "result",
-          stream: `${msgs.done}\n\n${result}`,
+          stream: `${msgs.done}\n\n${synthesizedContent}`,
           routing_layer: "L2",
         };
         await TaskArchiveRepo.markDelivered(taskId).catch(() => {});

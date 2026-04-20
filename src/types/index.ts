@@ -707,12 +707,19 @@ export interface WorkerResult {
   confidence: number;
   ask_for_more_context?: string[];
   error_message?: string;
+  /** Worker 执行过程详情（由 worker-prompt.ts parseWorkerResult 填充） */
+  execution_details?: {
+    steps_taken?: string[];
+    sources_used?: string[];
+    errors_encountered?: string[];
+  };
 }
 
 export type WorkerResultStatus =
   | "completed"
   | "partial"
-  | "failed";
+  | "failed"
+  | "needs_clarification";
 
 // ── ajv 简化校验 Schema ────────────────────────────────────────────────────────
 
@@ -860,9 +867,11 @@ export type SSEEventTypePhase3 =
   | "manager_decision"
   | "clarifying_needed"
   | "command_issued"
-  | "worker_progress"
-  | "worker_completed"
-  | "manager_synthesized";
+  | "archive_written"     // Phase 3.0: Archive 已写入（来自 task_archive_events.archive_created）
+  | "worker_started"     // Phase 3.0: Worker 开始执行
+  | "worker_progress"    // Phase 3.0: Worker 执行中（进度报告）
+  | "worker_completed"   // Phase 3.0: Worker 执行完成
+  | "manager_synthesized"; // Phase 3.0: Manager 合成最终输出
 
 export interface SSEManagerDecisionEvent {
   type: "manager_decision";
@@ -878,12 +887,42 @@ export interface SSECommandIssuedEvent {
   timestamp: string;
 }
 
+/** Phase 3.0: task_archives 写入完成（来自 task_archive_events.archive_created） */
+export interface SSEArchiveWrittenEvent {
+  type: "archive_written";
+  task_id: string;
+  archive_id: string;
+  decision_type: string;
+  routing_layer: string;
+  timestamp: string;
+}
+
+/** Phase 3.0: Worker 开始执行（来自 task_archive_events.worker_started） */
+export interface SSEWorkerStartedEvent {
+  type: "worker_started";
+  task_id: string;
+  command_id: string;
+  worker_role: string;
+  routing_layer: string;
+  timestamp: string;
+}
+
 export interface SSEWorkerCompletedEvent {
   type: "worker_completed";
   task_id: string;
   command_id: string;
   worker_type: WorkerHint;
   summary: string;
+  timestamp: string;
+}
+
+/** Phase 3.0: Manager 合成最终输出（来自 task_archive_events.manager_synthesized） */
+export interface SSEManagerSynthesizedEvent {
+  type: "manager_synthesized";
+  task_id: string;
+  final_content: string;
+  confidence: number;
+  routing_layer: string;
   timestamp: string;
 }
 

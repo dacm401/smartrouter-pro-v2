@@ -183,6 +183,10 @@ export interface LLMNativeRouterResult {
   raw_manager_output?: string;
   /** execute_task 的执行计划（Phase 2 新增） */
   execution_plan?: ExecutionPlan;
+  /** Phase 3.0: 创建的 archive_id（用于 SSE archive_written 事件） */
+  archive_id?: string;
+  /** Phase 3.0: 创建的 command_id（用于 SSE worker_started 事件） */
+  command_id?: string;
 }
 
 // ── 主入口 ───────────────────────────────────────────────────────────────────
@@ -292,7 +296,7 @@ async function routeByDecision(
       // B39-02 fix: ask_clarification 写 task_archives，便于追踪 ClarifyQuestion 后续状态
       const clarifyingTaskId = uuid();
       try {
-        const { TaskArchiveRepo } = await import("../db/task-archive-repo.js");
+        const { TaskArchiveRepo, TaskArchiveEventRepo } = await import("../db/task-archive-repo.js");
         await TaskArchiveRepo.create({
           task_id: clarifyingTaskId,
           user_id,
@@ -302,6 +306,15 @@ async function routeByDecision(
         });
         // create 默认 state=delegated，改为 clarifying 以便追踪
         await TaskArchiveRepo.updateState(clarifyingTaskId, "clarifying");
+        // Phase 3.0: 写入 archive_written 事件
+        await TaskArchiveEventRepo.create({
+          archive_id: clarifyingTaskId,
+          task_id: clarifyingTaskId,
+          event_type: "archive_created",
+          payload: { decision_type: "ask_clarification", question_text: cq?.question_text },
+          actor: "fast_manager",
+          user_id,
+        });
       } catch (e: any) {
         console.warn("[llm-native-router] Clarifying archive create failed:", e.message);
       }
@@ -313,6 +326,7 @@ async function routeByDecision(
         decision_type: "ask_clarification",
         clarifying: cq,
         clarifying_task_id: clarifyingTaskId,
+        archive_id: clarifyingTaskId,
         raw_manager_output: raw,
       };
     }
@@ -402,25 +416,35 @@ async function routeByDecision(
         }
       }
 
-      // Phase 3.0: 写入 TaskArchive
+      // Phase 3.0: 写入 TaskArchive + archive_written 事件
+      let archiveRecord: { id: string } | null = null;
       try {
-        const { TaskArchiveRepo } = await import("../db/task-archive-repo.js");
-        await TaskArchiveRepo.create({
+        const { TaskArchiveRepo, TaskArchiveEventRepo } = await import("../db/task-archive-repo.js");
+        archiveRecord = await TaskArchiveRepo.create({
           task_id: taskId,
           user_id,
           session_id,
           decision,
           user_input: message,
         });
+        await TaskArchiveEventRepo.create({
+          archive_id: archiveRecord.id,
+          task_id: taskId,
+          event_type: "archive_created",
+          payload: { decision_type: "delegate_to_slow", command_type: command?.command_type ?? "research" },
+          actor: "fast_manager",
+          user_id,
+        });
       } catch (e: any) {
         console.warn("[llm-native-router] TaskArchive create failed:", e.message);
       }
 
-      // Phase 3.0: 写入 task_commands（使用脱敏后的 processedCommand）
+      // Phase 3.0: 写入 task_commands + worker_started 事件
+      let commandRecord: { id: string } | null = null;
       try {
-        const { TaskCommandRepo } = await import("../db/task-archive-repo.js");
+        const { TaskCommandRepo, TaskArchiveEventRepo } = await import("../db/task-archive-repo.js");
         if (processedCommand) {
-          await TaskCommandRepo.create({
+          commandRecord = await TaskCommandRepo.create({
             task_id: taskId,
             archive_id: taskId,
             user_id,
@@ -428,6 +452,15 @@ async function routeByDecision(
             worker_hint: processedCommand.worker_hint,
             priority: processedCommand.priority ?? "normal",
             payload: processedCommand,
+          });
+          // Phase 3.0: worker_started 事件
+          await TaskArchiveEventRepo.create({
+            archive_id: taskId,
+            task_id: taskId,
+            event_type: "worker_started",
+            payload: { worker_role: processedCommand.worker_hint ?? "slow_worker", command_id: commandRecord.id },
+            actor: "slow_worker",
+            user_id,
           });
         }
       } catch (e: any) {
@@ -445,6 +478,8 @@ async function routeByDecision(
         routing_layer: "L2",
         decision_type: "delegate_to_slow",
         raw_manager_output: raw,
+        archive_id: archiveRecord?.id ?? taskId,
+        command_id: commandRecord?.id,
       };
     }
 
@@ -519,10 +554,11 @@ async function routeByDecision(
         }
       }
 
-      // Step 1: 写入 TaskArchive（state: delegated，Worker 会改为 running）
+      // Step 1: 写入 TaskArchive + archive_written 事件
+      let archiveRecord2: { id: string } | null = null;
       try {
-        const { TaskArchiveRepo } = await import("../db/task-archive-repo.js");
-        await TaskArchiveRepo.create({
+        const { TaskArchiveRepo, TaskArchiveEventRepo } = await import("../db/task-archive-repo.js");
+        archiveRecord2 = await TaskArchiveRepo.create({
           task_id: taskId,
           user_id,
           session_id,
@@ -531,15 +567,24 @@ async function routeByDecision(
           task_brief: command?.task_brief,
           goal: command?.goal,
         });
+        await TaskArchiveEventRepo.create({
+          archive_id: archiveRecord2.id,
+          task_id: taskId,
+          event_type: "archive_created",
+          payload: { decision_type: "execute_task", command_type: processedCommand?.command_type ?? "execute_plan" },
+          actor: "fast_manager",
+          user_id,
+        });
       } catch (e: any) {
         console.warn("[llm-native-router] TaskArchive create failed:", e.message);
       }
 
-      // Step 2: 写入 task_commands（使用脱敏后的 processedCommand）
+      // Step 2: 写入 task_commands + worker_started 事件
+      let commandRecord2: { id: string } | null = null;
       try {
-        const { TaskCommandRepo } = await import("../db/task-archive-repo.js");
+        const { TaskCommandRepo, TaskArchiveEventRepo } = await import("../db/task-archive-repo.js");
         if (processedCommand) {
-          await TaskCommandRepo.create({
+          commandRecord2 = await TaskCommandRepo.create({
             task_id: taskId,
             archive_id: taskId,
             user_id,
@@ -548,6 +593,14 @@ async function routeByDecision(
             priority: processedCommand.priority ?? "normal",
             payload: processedCommand,
             timeout_sec: processedCommand.timeout_sec,
+          });
+          await TaskArchiveEventRepo.create({
+            archive_id: taskId,
+            task_id: taskId,
+            event_type: "worker_started",
+            payload: { worker_role: processedCommand.worker_hint ?? "execute_worker", command_id: commandRecord2.id },
+            actor: "execute_worker",
+            user_id,
           });
         }
       } catch (e: any) {
@@ -558,6 +611,25 @@ async function routeByDecision(
         ? "好的，正在处理这个任务，稍等一下～"
         : "Got it. Processing this task, please wait...";
 
+      // Phase 3.0: P0-3 — execute_task 接入 TaskPlanner，生成 ExecutionPlan
+      let execution_plan;
+      try {
+        execution_plan = await taskPlanner.plan({
+          taskId,
+          goal: command?.goal ?? message,
+          userId: user_id,
+          sessionId: session_id,
+          model: config.slowModel,
+        });
+        console.log("[llm-native-router] execute_task: ExecutionPlan generated:", {
+          taskId,
+          steps: execution_plan.steps.length,
+        });
+      } catch (e: any) {
+        console.warn("[llm-native-router] TaskPlanner.plan failed:", e.message);
+        // TaskPlanner 失败不影响主流程，继续返回 delegation
+      }
+
       return {
         message: fastReply,
         decision,
@@ -565,6 +637,9 @@ async function routeByDecision(
         routing_layer: "L3",
         decision_type: "execute_task",
         raw_manager_output: raw,
+        archive_id: archiveRecord2?.id ?? taskId,
+        command_id: commandRecord2?.id,
+        execution_plan,
       };
     }
 
