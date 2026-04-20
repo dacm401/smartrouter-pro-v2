@@ -35,6 +35,7 @@ const mockTaskRepoCreate = vi.hoisted(() => vi.fn<any>().mockResolvedValue(undef
 const mockMemoryEntryRepoGetTopForUser = vi.hoisted(() => vi.fn<any>());
 const mockToolGuardrailValidate = vi.hoisted(() => vi.fn<any>());
 const mockRunRetrievalPipeline = vi.hoisted(() => vi.fn<any>());
+const mockEvidenceRepoCreate = vi.hoisted(() => vi.fn<any>().mockResolvedValue({}));
 
 // ── Module mocks ──────────────────────────────────────────────────────────────
 
@@ -47,6 +48,9 @@ vi.mock("../../src/db/repositories.js", () => ({
     getSummary: mockTaskRepoGetSummary,
     updateExecution: mockTaskRepoUpdateExecution,
     create: mockTaskRepoCreate,
+  },
+  EvidenceRepo: {
+    create: mockEvidenceRepoCreate,
   },
 }));
 
@@ -206,6 +210,19 @@ class MockedToolExecutor {
     const text = await response.text();
     const truncated = text.length > 1048576 ? text.slice(0, 1048576) + "\n[...truncated]" : text;
     if (!response.ok) throw new Error(`http_request: HTTP ${response.status} ${response.statusText}`);
+    // Evidence writing (fire-and-forget)
+    if (ctx.taskId) {
+      let evidenceContent: string;
+      let evidenceScore: number | null = null;
+      try { JSON.parse(truncated); evidenceContent = JSON.stringify(JSON.parse(truncated)).slice(0, 4096); evidenceScore = 0.6; }
+      catch { evidenceContent = truncated.slice(0, 1024); }
+      mockEvidenceRepoCreate({
+        task_id: ctx.taskId, user_id: ctx.userId, source: "http_request",
+        content: evidenceContent,
+        source_metadata: { url, method: "GET", status: response.status, body_length: text.length, truncated: text.length > 1048576 },
+        relevance_score: evidenceScore,
+      }).catch(() => {});
+    }
     return { status: response.status, status_text: response.statusText, headers: Object.fromEntries(response.headers.entries()), body: truncated, body_length: text.length, url: response.url || url };
   }
 
@@ -269,6 +286,7 @@ describe("ToolExecutor", () => {
     mockTaskRepoGetSummary.mockResolvedValue(null);
     mockTaskRepoUpdateExecution.mockResolvedValue(undefined);
     mockTaskRepoCreate.mockResolvedValue(undefined);
+    mockEvidenceRepoCreate.mockResolvedValue({});
   });
 
   afterEach(() => {
@@ -469,6 +487,104 @@ describe("ToolExecutor", () => {
     await expect(
       new ToolExecutor().execute(makeCall("http_request", { url: "http://httpbin.org/get" }), makeCtx())
     ).rejects.toThrow(GuardrailRejection);
+  });
+
+  // ── TA-002.16-E1: http_request → writes evidence record on successful fetch ──
+
+  it("TA-002.16-E1: http_request calls EvidenceRepo.create with source=http_request", async () => {
+    mockToolGuardrailValidate.mockResolvedValue({ allowed: true });
+
+    const mockResponse = {
+      ok: true, status: 200, statusText: "OK",
+      headers: { get: (name: string) => (name === "content-length" ? "15" : null) as any, entries: () => [["content-length", "15"]] as [string, string][] },
+      url: "https://api.example.com/data",
+      text: vi.fn<any>().mockResolvedValue('{"key":"value"}'),
+    } as unknown as Response;
+
+    fetchMock.mockResolvedValue(mockResponse);
+
+    await new ToolExecutor().execute(
+      makeCall("http_request", { url: "https://api.example.com/data" }),
+      makeCtx({ taskId: "task-abc" })
+    );
+
+    expect(mockEvidenceRepoCreate).toHaveBeenCalledOnce();
+    expect(mockEvidenceRepoCreate.mock.calls[0][0]).toMatchObject({
+      task_id: "task-abc",
+      user_id: "test-user",
+      source: "http_request",
+    });
+  });
+
+  // ── TA-002.16-E2: http_request → evidence content is JSON snippet ──────────
+
+  it("TA-002.16-E2: http_request stores JSON response body as evidence content", async () => {
+    mockToolGuardrailValidate.mockResolvedValue({ allowed: true });
+
+    const mockResponse = {
+      ok: true, status: 200, statusText: "OK",
+      headers: { get: () => null, entries: () => [] as [string, string][] },
+      url: "https://api.example.com/json",
+      text: vi.fn<any>().mockResolvedValue('{"price": 99.5, "volume": 10000}'),
+    } as unknown as Response;
+
+    fetchMock.mockResolvedValue(mockResponse);
+
+    await new ToolExecutor().execute(
+      makeCall("http_request", { url: "https://api.example.com/json" }),
+      makeCtx({ taskId: "task-xyz" })
+    );
+
+    const evidenceArg = mockEvidenceRepoCreate.mock.calls[0][0];
+    expect(evidenceArg.content).toContain("price");
+    expect(evidenceArg.source_metadata).toMatchObject({ status: 200, url: "https://api.example.com/json" });
+    expect(evidenceArg.relevance_score).toBe(0.6);
+  });
+
+  // ── TA-002.16-E3: http_request → evidence with no taskId → no write ────────
+
+  it("TA-002.16-E3: http_request skips evidence when taskId is not in context", async () => {
+    mockToolGuardrailValidate.mockResolvedValue({ allowed: true });
+
+    const mockResponse = {
+      ok: true, status: 200, statusText: "OK",
+      headers: { get: () => null, entries: () => [] as [string, string][] },
+      url: "https://api.example.com/data",
+      text: vi.fn<any>().mockResolvedValue('{"ok":true}'),
+    } as unknown as Response;
+
+    fetchMock.mockResolvedValue(mockResponse);
+
+    await new ToolExecutor().execute(
+      makeCall("http_request", { url: "https://api.example.com/data" }),
+      makeCtx({ taskId: undefined })
+    );
+
+    expect(mockEvidenceRepoCreate).not.toHaveBeenCalled();
+  });
+
+  // ── TA-002.16-E4: http_request → non-JSON body stored as raw text ─────────
+
+  it("TA-002.16-E4: http_request stores non-JSON plain text as evidence content", async () => {
+    mockToolGuardrailValidate.mockResolvedValue({ allowed: true });
+
+    const mockResponse = {
+      ok: true, status: 200, statusText: "OK",
+      headers: { get: () => null, entries: () => [] as [string, string][] },
+      url: "https://api.example.com/text",
+      text: vi.fn<any>().mockResolvedValue("Hello World plain text response"),
+    } as unknown as Response;
+
+    fetchMock.mockResolvedValue(mockResponse);
+
+    await new ToolExecutor().execute(
+      makeCall("http_request", { url: "https://api.example.com/text" }),
+      makeCtx({ taskId: "task-plain" })
+    );
+
+    const evidenceArg = mockEvidenceRepoCreate.mock.calls[0][0];
+    expect(evidenceArg.content).toBe("Hello World plain text response");
+    expect(evidenceArg.relevance_score).toBeNull();
   });
 
   // ── TA-002.16: http_request → successful fetch returns structured response ─

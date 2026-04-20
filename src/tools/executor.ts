@@ -286,6 +286,37 @@ export class ToolExecutor {
       ? text.slice(0, config.guardrail.httpMaxResponseBytes) + "\n[...truncated]"
       : text;
 
+    // E1: write evidence record (fire-and-forget; non-blocking)
+    if (ctx.taskId) {
+      const rawBody = truncated;
+      // Prefer structured JSON snippet as evidence content; fall back to raw text
+      let evidenceContent: string;
+      let evidenceScore: number | null = null;
+      try {
+        const parsed = JSON.parse(rawBody);
+        evidenceContent = JSON.stringify(parsed).slice(0, 4096);
+        // Boost relevance for successful JSON responses
+        evidenceScore = response.ok ? 0.6 : 0.3;
+      } catch {
+        evidenceContent = rawBody.slice(0, 1024);
+      }
+
+      EvidenceRepo.create({
+        task_id: ctx.taskId,
+        user_id: ctx.userId,
+        source: "http_request",
+        content: evidenceContent,
+        source_metadata: {
+          url,
+          method: "GET",
+          status: response.status,
+          body_length: text.length,
+          truncated: text.length > config.guardrail.httpMaxResponseBytes,
+        },
+        relevance_score: evidenceScore,
+      }).catch((e) => console.warn("[tool/http_request] Failed to write evidence:", e));
+    }
+
     return {
       status: response.status,
       status_text: response.statusText,
