@@ -4,8 +4,9 @@
  * 职责：
  * 1. 应用硬编码安全规则（HARD_POLICY_RULES）
  * 2. 应用 clarification 体验成本惩罚
- * 3. 应用配置化阈值过滤
- * 4. 返回修正后的分数 + policy overrides 记录
+ * 3. KB-1: 应用知识边界校准（降低 direct_answer，轻抬 delegate/execute）
+ * 4. 应用配置化阈值过滤
+ * 5. 返回修正后的分数 + policy overrides 记录
  */
 
 import type {
@@ -13,10 +14,16 @@ import type {
   DecisionFeatures,
   PolicyOverride,
   GatingConfig,
+  KnowledgeBoundarySignal,
 } from "../../types/index.js";
 import { HARD_POLICY_RULES } from "./hard-policy.js";
 import { DEFAULT_GATING_CONFIG } from "./gating-config.js";
 import { getSelectedAction } from "./system-confidence.js";
+import {
+  hasStrongBoundarySignal,
+  isCalibratableSignal,
+  type KnowledgeBoundarySignal as KBSignal,
+} from "./knowledge-boundary-signals.js";
 
 export interface CalibratedDecision {
   /** 修正后的各动作分数 */
@@ -30,15 +37,17 @@ export interface CalibratedDecision {
 /**
  * 对 LLM 输出的原始分数进行 Policy 校准
  *
- * @param llmScores   LLM 输出的各动作原始分数
- * @param features    LLM 输出的结构化特征
- * @param config      可配置参数（默认 DEFAULT_GATING_CONFIG）
+ * @param llmScores                 LLM 输出的各动作原始分数
+ * @param features                  LLM 输出的结构化特征
+ * @param config                    可配置参数（默认 DEFAULT_GATING_CONFIG）
+ * @param knowledgeBoundarySignals   KB-1: 知识边界信号数组（可选）
  * @returns 校准后的分数和最终动作
  */
 export function calibrateWithPolicy(
   llmScores: Record<ManagerDecisionType, number>,
   features: DecisionFeatures,
-  config: GatingConfig = DEFAULT_GATING_CONFIG
+  config: GatingConfig = DEFAULT_GATING_CONFIG,
+  knowledgeBoundarySignals?: KnowledgeBoundarySignal[]
 ): CalibratedDecision {
   let scores = { ...llmScores };
   const policyOverrides: PolicyOverride[] = [];
@@ -58,7 +67,51 @@ export function calibrateWithPolicy(
     scores.ask_clarification = penalizedClarScore;
   }
 
-  // 2. 应用硬编码规则（boost/penalize/block）
+  // 2. 应用 KB-1 知识边界校准（位于硬规则之后，阈值之前）
+  // KB-1 校准原则：
+  // - 压低 direct_answer（因为参数内不可靠回答不应该高置信直答）
+  // - 轻抬 delegate_to_slow（让知识边界问题更容易进入深度处理）
+  // - 不抬 ask_clarification（用户意图清晰，缺的是系统知识，不是用户信息）
+  if (knowledgeBoundarySignals && knowledgeBoundarySignals.length > 0) {
+    const strongSignals = knowledgeBoundarySignals.filter((s) => isCalibratableSignal(s));
+    if (strongSignals.length > 0) {
+      const strongestSignal = strongSignals.reduce((best, s) =>
+        s.strength > best.strength ? s : best
+      );
+
+      // Rule KB-1: 强 knowledge boundary signal → 压低 direct_answer (-0.20)
+      const directScore = scores.direct_answer;
+      const newDirectScore = Math.max(0, directScore - 0.20);
+      if (newDirectScore !== directScore) {
+        scores.direct_answer = newDirectScore;
+        policyOverrides.push({
+          rule: "kb-strong-boundary-penalty",
+          action: "penalize",
+          target: "direct_answer",
+          original_score: directScore,
+          adjusted_score: newDirectScore,
+          reason: `KB signal="${strongestSignal.type}"(strength=${strongestSignal.strength.toFixed(2)})，知识边界问题不应高置信直答`,
+        });
+      }
+
+      // Rule KB-2: 轻抬 delegate_to_slow (+0.10)，提高其竞争力
+      const delegateScore = scores.delegate_to_slow;
+      const newDelegateScore = Math.min(1, delegateScore + 0.10);
+      if (newDelegateScore !== delegateScore) {
+        scores.delegate_to_slow = newDelegateScore;
+        policyOverrides.push({
+          rule: "kb-delegate-boost",
+          action: "boost",
+          target: "delegate_to_slow",
+          original_score: delegateScore,
+          adjusted_score: newDelegateScore,
+          reason: `KB signal="${strongestSignal.type}" 提示问题需要深度处理`,
+        });
+      }
+    }
+  }
+
+  // 3. 应用硬编码规则（boost/penalize/block）
   for (const rule of HARD_POLICY_RULES) {
     if (!rule.condition(features)) continue;
 
@@ -101,7 +154,7 @@ export function calibrateWithPolicy(
     }
   }
 
-  // 3. 应用配置化阈值（低于阈值 → 置零，等效于否决该动作）
+  // 4. 应用配置化阈值（低于阈值 → 置零，等效于否决该动作）
   for (const [action, threshold] of Object.entries(config.thresholds)) {
     const act = action as ManagerDecisionType;
     if (scores[act] < threshold) {
@@ -120,7 +173,7 @@ export function calibrateWithPolicy(
     }
   }
 
-  // 4. 选取得分最高的有效动作
+  // 5. 选取得分最高的有效动作
   const finalAction = getSelectedAction(scores);
 
   return { adjustedScores: scores, policyOverrides, finalAction };

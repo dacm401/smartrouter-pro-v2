@@ -642,6 +642,64 @@ export interface GatingConfig {
   };
 }
 
+// ── Knowledge Boundary Signals (KB-1) ─────────────────────────────────────────
+
+/**
+ * KnowledgeBoundarySignalType — 知识边界信号类型。
+ *
+ * 【设计原则】
+ * - 这是信号，不是动作指令
+ * - 不直接决定路由，只供 G1/G2/G3 校准使用
+ * - 不做 pattern → action 的硬映射
+ */
+export type KnowledgeBoundarySignalType =
+  /** 依赖当前外部事实，而非参数内稳定知识 */
+  | "realtime_external_fact"
+  /** 依赖当前运行环境才能回答的事实（如今天星期几、现在几点） */
+  | "current_environment_fact"
+  /** 明确涉及模型训练截止日期之后的事件 */
+  | "post_training_event"
+  /** 实时天气、温度、降雨、空气质量 */
+  | "live_weather_data"
+  /** 实时股价、汇率、指数、成交、涨跌 */
+  | "live_market_data"
+  /** 最新新闻、今日头条、刚发生的事件 */
+  | "live_news_data"
+  /** 比赛比分、赛果、排名变化 */
+  | "live_result_or_score"
+  /** 强依赖"今天/现在/最新/本周"等时间语的公共事实 */
+  | "time_sensitive_public_fact";
+
+/**
+ * KnowledgeBoundarySignal — 知识边界信号输出。
+ *
+ * 由 detectKnowledgeBoundarySignals() 生成，供 G1/G2/G3 校准使用。
+ * 不做动作决定，只做知识边界标记和强度评估。
+ */
+export interface KnowledgeBoundarySignal {
+  /** 规则唯一标识（用于 trace/benchmark/调试） */
+  id: string;
+  /** 信号类型 */
+  type: KnowledgeBoundarySignalType;
+  /**
+   * 命中强度（0~1）。
+   * 表示"系统对该请求命中知识边界的确信程度"，不是动作置信度。
+   */
+  strength: number;
+  /** 命中原因描述（用于 trace/debug） */
+  reasons: string[];
+  /** 命中的 pattern 片段（用于解释性复盘） */
+  matched_patterns: string[];
+}
+
+/**
+ * KnowledgeBoundaryContext — 信号检测的输入上下文（第一版只依赖 message）。
+ */
+export interface KnowledgeBoundaryContext {
+  locale?: string;
+  now?: string;
+}
+
 /** 决策类型枚举（Phase 0 精简版，4 种） */
 export type ManagerDecisionType =
   | "direct_answer"

@@ -25,6 +25,14 @@ import { config } from "../config.js";
 import { runRetrievalPipeline, buildCategoryAwareMemoryText } from "./memory-retrieval.js";
 import { FAST_MODEL_TOOLS } from "./fast-model-tools.js";
 import { toolExecutor } from "../tools/executor.js";
+// DEPRECATED ARCHITECTURE HACK (O-008):
+// Transitional workaround for weak small-model tool judgment.
+// This was a short-term fix that bypasses Manager authority.
+// DO NOT expand this pattern.
+// Planned replacement: Knowledge Boundary Calibration (KB-1/KB-2).
+// KB-1 provides signal detection that feeds into G1/G2 gate calibration,
+// which achieves the same goal without pre-injecting orchestrator responses.
+import { detectWeatherQuery, fetchRealTimeWeather, formatWeatherPrompt } from "./weather-search.js";
 
 // ── Manager Synthesis ─────────────────────────────────────────────────────────
 
@@ -482,6 +490,21 @@ export async function orchestrator(input: OrchestratorInput): Promise<Orchestrat
     ...historyMessages,
     { role: "user", content: message },
   ];
+
+  // O-008 Guardrail: 小模型(Qwen2.5-7B) function calling 不可靠，
+  // 主动检测天气查询，先行拉取数据注入 context，再让模型回答
+  const weatherCity = detectWeatherQuery(message);
+  if (weatherCity) {
+    const weatherData = await fetchRealTimeWeather(weatherCity);
+    if (weatherData) {
+      const weatherInjection = formatWeatherPrompt(weatherData, message);
+      const weatherMsg: ChatMessage = {
+        role: "user",
+        content: `【系统自动获取实时天气】\n${weatherInjection}\n\n请基于以上实时数据回答用户问题。`,
+      };
+      messages.push(weatherMsg);
+    }
+  }
 
   // Step 3: 调用 Fast 模型（带工具）
   const { reply, toolUsed, command, clarifyQuestion } = await callFastModelWithTools(messages, language, reqApiKey);

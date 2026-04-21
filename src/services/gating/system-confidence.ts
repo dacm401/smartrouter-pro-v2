@@ -13,29 +13,41 @@
  * 3. 缺信息惩罚
  * 4. 高风险动作惩罚
  * 5. 模糊特征惩罚
+ * 6. KB-1: 知识边界校准（未知-by-definition 惩罚）
  */
 
 import type {
   ManagerDecisionType,
   DecisionFeatures,
   GatingConfig,
+  KnowledgeBoundarySignal,
 } from "../../types/index.js";
 import { DEFAULT_GATING_CONFIG } from "./gating-config.js";
+import { hasStrongBoundarySignal } from "./knowledge-boundary-signals.js";
+
+/**
+ * KB-1 知识边界惩罚系数。
+ * 当 selected_action = direct_answer 且命中强 knowledge boundary signal 时使用。
+ * 0.75 = 将 direct_answer 的置信度降低 25%，但不完全归零（保留 delegate 的机会）。
+ */
+const KB_DIRECT_ANSWER_PENALTY = 0.75;
 
 /**
  * 计算 system_confidence
  *
- * @param llmScores       LLM 输出的各动作原始分数（0.0 ~ 1.0）
- * @param llmConfidenceHint LLM 自报置信度（参考值）
- * @param features         LLM 输出的结构化特征
- * @param config           可配置参数（默认使用 DEFAULT_GATING_CONFIG）
+ * @param llmScores                 LLM 输出的各动作原始分数（0.0 ~ 1.0）
+ * @param llmConfidenceHint         LLM 自报置信度（参考值）
+ * @param features                  LLM 输出的结构化特征
+ * @param config                    可配置参数（默认使用 DEFAULT_GATING_CONFIG）
+ * @param knowledgeBoundarySignals   KB-1: 知识边界信号数组（可选）
  * @returns system_confidence（0.0 ~ 1.0）
  */
 export function calculateSystemConfidence(
   llmScores: Record<ManagerDecisionType, number>,
   llmConfidenceHint: number,
   features: DecisionFeatures,
-  config: GatingConfig = DEFAULT_GATING_CONFIG
+  config: GatingConfig = DEFAULT_GATING_CONFIG,
+  knowledgeBoundarySignals?: KnowledgeBoundarySignal[]
 ): number {
   // 1. 排序分数，计算 gap
   const sortedScores = Object.values(llmScores).sort((a, b) => b - a);
@@ -64,6 +76,18 @@ export function calculateSystemConfidence(
   // 这项让"需要长推理"在 delegate 场景下不会因为缺少外部特征而扣分
   if (features.needs_long_reasoning && selectedAction === "direct_answer") {
     confidence *= 0.90;
+  }
+
+  // 8. KB-1: 知识边界校准
+  // 若 selected_action = direct_answer 且存在强 knowledge boundary signal，
+  // 说明这类问题属于"参数内不可靠回答"，应降低 direct_answer 的置信度
+  // 这不是"强制路由"，而是"让 direct_answer 不值得信任"
+  if (
+    selectedAction === "direct_answer" &&
+    knowledgeBoundarySignals &&
+    hasStrongBoundarySignal(knowledgeBoundarySignals, 0.80)
+  ) {
+    confidence *= KB_DIRECT_ANSWER_PENALTY;
   }
 
   return Math.max(0, Math.min(1, confidence));

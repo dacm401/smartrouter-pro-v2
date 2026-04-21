@@ -51,6 +51,9 @@ import { shouldRerank, ruleBasedRerank } from "./gating/delegation-reranker.js";
 import { DEFAULT_GATING_CONFIG } from "./gating/gating-config.js";
 import type { CalibratedDecision } from "./gating/policy-calibrator.js";
 import type { RerankResult } from "./gating/delegation-reranker.js";
+// KB-1: Knowledge Boundary Signals
+import { detectKnowledgeBoundarySignals } from "./gating/knowledge-boundary-signals.js";
+import type { KnowledgeBoundarySignal } from "../types/index.js";
 
 export interface GatedDelegationContext {
   llmScores: Record<ManagerDecisionType, number>;
@@ -62,34 +65,40 @@ export interface GatedDelegationContext {
   rerankResult?: RerankResult;
   /** 最终用于路由的 action（可能经过 rerank） */
   routedAction: ManagerDecisionType;
+  /** KB-1: 知识边界信号（可选，用于 trace/debug） */
+  knowledgeBoundarySignals?: KnowledgeBoundarySignal[];
 }
 
 /**
  * Gated Delegation 完整流程：G1 → G2 → G3
  *
- * @param llmScores        LLM 输出的各动作原始分数
- * @param llmConfidenceHint LLM 自报置信度
- * @param features         LLM 输出的结构化特征
+ * @param llmScores                 LLM 输出的各动作原始分数
+ * @param llmConfidenceHint         LLM 自报置信度
+ * @param features                  LLM 输出的结构化特征
+ * @param knowledgeBoundarySignals   KB-1: 知识边界信号（可选）
  * @returns GatedDelegationContext（含所有中间结果，供 trace/debug/benchmark 使用）
  */
 export function runGatedDelegation(
   llmScores: Record<ManagerDecisionType, number>,
   llmConfidenceHint: number,
-  features: DecisionFeatures
+  features: DecisionFeatures,
+  knowledgeBoundarySignals?: KnowledgeBoundarySignal[]
 ): GatedDelegationContext {
-  // G1: 计算 system_confidence
+  // G1: 计算 system_confidence（含 KB 知识边界校准）
   const systemConfidence = calculateSystemConfidence(
     llmScores,
     llmConfidenceHint,
     features,
-    DEFAULT_GATING_CONFIG
+    DEFAULT_GATING_CONFIG,
+    knowledgeBoundarySignals
   );
 
-  // G2: Policy 校准
+  // G2: Policy 校准（含 KB 知识边界校准）
   const calibrated: CalibratedDecision = calibrateWithPolicy(
     llmScores,
     features,
-    DEFAULT_GATING_CONFIG
+    DEFAULT_GATING_CONFIG,
+    knowledgeBoundarySignals
   );
 
   // G3: 判断是否需要 rerank
@@ -114,6 +123,8 @@ export function runGatedDelegation(
     policyOverrides: calibrated.policyOverrides,
     rerankResult,
     routedAction,
+    // KB-1: 保留知识边界信号供 trace/debug 使用
+    knowledgeBoundarySignals,
   };
 }
 
@@ -283,8 +294,17 @@ export async function routeWithManagerDecision(
   // Step 1: 调用 Fast 模型，传递 Manager Prompt
   const managerOutput = await callManagerModel({ message, history, language, reqApiKey });
 
+  // Step 1.5 (KB-1): 检测知识边界信号
+  // fail-open：检测异常不阻断主流程，只记录 warning
+  let kbSignals: KnowledgeBoundarySignal[] | undefined;
+  try {
+    kbSignals = detectKnowledgeBoundarySignals(message, { locale: language });
+  } catch (e: any) {
+    console.warn("[llm-native-router] KB signal detection failed (fail-open):", e.message);
+  }
+
   // Step 2: 解析 G1 多动作打分格式（manager_decision_v2）
-  const gatedResult = parseGatedDecision(managerOutput);
+  const gatedResult = parseGatedDecision(managerOutput, kbSignals);
 
   // Step 3: 不合法 → fallback，返回 L0 direct_answer
   if (!gatedResult) {
@@ -303,7 +323,7 @@ export async function routeWithManagerDecision(
     };
   }
 
-  // Step 4: 按 Gated Delegation 最终结果路由
+  // Step 4: 按 Gated Delegation 最终结果路由（KB signals 已在 gatedResult.knowledgeBoundarySignals 中）
   return routeByGatedDecision(gatedResult, { message, user_id, session_id, language, reqApiKey, raw: managerOutput });
 }
 
@@ -347,7 +367,10 @@ async function callManagerModel(input: {
 
 // ── Gated Delegation: 解析 v2 格式 ───────────────────────────────────────────
 
-function parseGatedDecision(text: string): GatedDelegationContext | null {
+function parseGatedDecision(
+  text: string,
+  kbSignals?: KnowledgeBoundarySignal[]
+): GatedDelegationContext | null {
   try {
     const match =
       text.match(/```json\s*([\s\S]*?)\s*```/)?.[1] ??
@@ -380,7 +403,8 @@ function parseGatedDecision(text: string): GatedDelegationContext | null {
       ? Math.max(0, Math.min(1, raw.confidence_hint))
       : 0.5;
 
-    return runGatedDelegation(scores, llmConfidenceHint, features);
+    // KB-1: 传入知识边界信号，供 G1/G2 校准使用
+    return runGatedDelegation(scores, llmConfidenceHint, features, kbSignals);
   } catch (e) {
     console.warn("[parseGatedDecision] failed:", (e as Error).message);
     return null;
@@ -439,6 +463,12 @@ async function routeByGatedDecision(
     rerankReason: gated.rerankResult?.reason,
     policyOverrides: gated.policyOverrides.length,
     features: gated.features,
+    // KB-1: 知识边界信号（如果有）
+    kbSignals: gated.knowledgeBoundarySignals?.map((s) => ({
+      type: s.type,
+      strength: s.strength.toFixed(2),
+      reasons: s.reasons,
+    })) ?? [],
   });
 
   // 按最终路由动作分发

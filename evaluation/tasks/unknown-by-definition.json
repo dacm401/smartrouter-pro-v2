@@ -1,0 +1,163 @@
+[
+  {
+    "input": "深圳今天天气怎么样",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "knowledge",
+    "reason": "实时天气 → unknown-by-definition → 应触发 delegate"
+  },
+  {
+    "input": "What's the weather like in Tokyo today?",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "knowledge",
+    "reason": "英文天气 → unknown-by-definition"
+  },
+  {
+    "input": "今天会下雨吗",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "knowledge",
+    "reason": "实时天气条件查询 → unknown-by-definition"
+  },
+  {
+    "input": "腾讯今天股价多少",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "knowledge",
+    "reason": "实时股价 → unknown-by-definition"
+  },
+  {
+    "input": "What is Tesla stock price right now?",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "knowledge",
+    "reason": "英文实时股价 → unknown-by-definition"
+  },
+  {
+    "input": "美元兑人民币现在多少",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "knowledge",
+    "reason": "实时汇率 → unknown-by-definition"
+  },
+  {
+    "input": "黄金当前价格",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "knowledge",
+    "reason": "实时大宗商品价格 → unknown-by-definition"
+  },
+  {
+    "input": "今天有什么 AI 新闻",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "knowledge",
+    "reason": "最新新闻 → unknown-by-definition"
+  },
+  {
+    "input": "What's the latest news about OpenAI?",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "knowledge",
+    "reason": "英文最新新闻 → unknown-by-definition"
+  },
+  {
+    "input": "刚刚发生了什么大事",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "knowledge",
+    "reason": "刚发生事件 → unknown-by-definition"
+  },
+  {
+    "input": "今天湖人比赛结果",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "knowledge",
+    "reason": "实时赛事结果 → unknown-by-definition"
+  },
+  {
+    "input": "Who won the match today?",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "knowledge",
+    "reason": "英文赛事查询 → unknown-by-definition"
+  },
+  {
+    "input": "今天星期几",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "knowledge",
+    "reason": "当前日期依赖 → unknown-by-definition"
+  },
+  {
+    "input": "What day is it today?",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "knowledge",
+    "reason": "英文日期查询 → unknown-by-definition"
+  },
+  {
+    "input": "现在北京时间几点",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "knowledge",
+    "reason": "实时时间查询 → unknown-by-definition"
+  },
+  {
+    "input": "最新 AI 研究成果有哪些",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "knowledge",
+    "reason": "最新研究成果 → time-sensitive public fact"
+  },
+  {
+    "input": "当前最新的疫情防控政策是什么",
+    "expected_mode": "slow",
+    "expected_layer": "L2",
+    "expected_intent": "knowledge",
+    "reason": "当前政策查询 → time-sensitive public fact"
+  },
+  {
+    "input": "牛顿三大定律是什么",
+    "expected_mode": "fast",
+    "expected_layer": "L0",
+    "expected_intent": "knowledge",
+    "reason": "稳定参数内知识 → 允许 direct_answer"
+  },
+  {
+    "input": "Python是什么编程语言",
+    "expected_mode": "fast",
+    "expected_layer": "L0",
+    "expected_intent": "simple_qa",
+    "reason": "简单概念问答 → direct_answer"
+  },
+  {
+    "input": "给我写一首关于天气的诗",
+    "expected_mode": "fast",
+    "expected_layer": "L0",
+    "expected_intent": "creative",
+    "reason": "创意写作（不是天气查询）→ direct_answer（误伤保护验证）"
+  },
+  {
+    "input": "新闻传播学有哪些常见的研究方法",
+    "expected_mode": "fast",
+    "expected_layer": "L0",
+    "expected_intent": "knowledge",
+    "reason": "学术概念（不是新闻查询）→ direct_answer（误伤保护验证）"
+  },
+  {
+    "input": "有哪些用于预测股价的数学模型",
+    "expected_mode": "fast",
+    "expected_layer": "L0",
+    "expected_intent": "reasoning",
+    "reason": "知识性回答（不是实时股价查询）→ direct_answer"
+  },
+  {
+    "input": "如何提高篮球比赛的得分技巧",
+    "expected_mode": "fast",
+    "expected_layer": "L0",
+    "expected_intent": "reasoning",
+    "reason": "体育知识建议（不是赛事结果查询）→ direct_answer"
+  }
+]
