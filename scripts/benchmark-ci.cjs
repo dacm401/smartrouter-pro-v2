@@ -47,13 +47,24 @@ const cases = JSON.parse(fs.readFileSync(casesPath, "utf8"));
 function ruleRouter(input) {
   const text = input.toLowerCase();
 
-  // ── L1: 实时数据 ────────────────────────────────────────────────────────────
-  const realtimePatterns = [
-    /天气/,  /weather/i, /几点了/, /现在.*时间/, /今天.*股价/, /股价/, /最新.*财报/,
-    /今日.*价格/, /当前.*价格/, /汇率/, /今.*新闻/, /昨.*比赛/, /最新.*比分/,
-    /nba.*比分/i, /足球.*结果/, /黄金.*价格/, /比分/, /财报.*最新/
+  // ── L1: 实时数据（事实查询类 → simple_qa） ─────────────────────────────────
+  // 股价/汇率/价格/时间 = 有明确答案的事实查询
+  const realtimeFactPatterns = [
+    /几点了/, /现在.*时间/, /股价/, /汇率/, /今日.*价格/, /当前.*价格/,
+    /黄金.*价格/, /最新.*财报/, /财报.*最新/
   ];
-  for (const p of realtimePatterns) {
+  for (const p of realtimeFactPatterns) {
+    if (p.test(text)) {
+      return { mode: "fast", layer: "L1", intent: "simple_qa" };
+    }
+  }
+
+  // ── L1: 实时数据（资讯/新闻/比分类 → chat） ────────────────────────────────
+  const realtimeNewsPatterns = [
+    /天气/, /weather/i, /今.*新闻/, /昨.*比赛/, /最新.*比分/,
+    /nba.*比分/i, /足球.*结果/, /比分/
+  ];
+  for (const p of realtimeNewsPatterns) {
     if (p.test(text)) {
       return { mode: "fast", layer: "L1", intent: "chat" };
     }
@@ -107,14 +118,24 @@ function ruleRouter(input) {
     }
   }
 
-  // ── L2: 深度创意写作 ────────────────────────────────────────────────────────
+  // ── L2: 深度创意写作（排除翻译场景） ───────────────────────────────────────
   const complexCreativePatterns = [
-    /科幻短篇/, /伦理困境/, /人物弧光/, /marketing.*copy/i, /品牌.*logo.*创意/,
-    /学术.*翻译/, /技术文档.*翻译/, /保留.*专业术语/, /保持.*学术.*风格/
+    /科幻短篇/, /伦理困境/, /人物弧光/, /marketing.*copy/i, /品牌.*logo.*创意/
   ];
   for (const p of complexCreativePatterns) {
     if (p.test(text)) {
       return { mode: "slow", layer: "L2", intent: "creative" };
+    }
+  }
+
+  // ── L2: 复杂翻译（学术/技术，需精确术语） ──────────────────────────────────
+  const complexTranslatePatterns = [
+    /学术.*翻译/, /技术文档.*翻译/, /保留.*专业术语/, /保持.*学术.*风格/,
+    /翻译.*学术/, /翻译.*技术文档/
+  ];
+  for (const p of complexTranslatePatterns) {
+    if (p.test(text)) {
+      return { mode: "slow", layer: "L2", intent: "translation" };
     }
   }
 
@@ -130,10 +151,14 @@ function ruleRouter(input) {
   }
 
   // ── L2: 多约束/复杂问题 ─────────────────────────────────────────────────────
-  // 多个问号 = 多个问题
+  // 多个问号 = 多个问题，但排除"多个简单定义问句"（如 Python是什么？Java是什么？）
   const questionMarkCount = (input.match(/[？?]/g) || []).length;
   if (questionMarkCount >= 2) {
-    return { mode: "slow", layer: "L2", intent: "reasoning" };
+    // 判断是否全是 "X是什么" 形式的简单定义查询
+    const isSimpleDefinitions = /是什么[？?]/.test(input) && !/区别|比较|分析|对比/.test(text);
+    if (!isSimpleDefinitions) {
+      return { mode: "slow", layer: "L2", intent: "reasoning" };
+    }
   }
   // "告诉我X是什么，它的Y是什么" = 多约束
   if (/告诉我.*是什么.*它.*是什么/.test(text)) {
@@ -188,11 +213,19 @@ function ruleRouter(input) {
   // ── L0: 简单问答（事实/定义） ───────────────────────────────────────────────
   const simpleQaPatterns = [
     /^[0-9+\-*/\s=]+$/, /等于几/, /首都/, /是什么$/, /what's the capital/i,
-    /python是什么$/, /^这个词.*意思/
+    /python是什么$/, /^这个词.*意思/, /分析.*词.*意思/, /这个词的意思/
   ];
   for (const p of simpleQaPatterns) {
     if (p.test(text)) {
       return { mode: "fast", layer: "L0", intent: "simple_qa" };
+    }
+  }
+
+  // 多个"X是什么"问句 → 简单定义组合，仍属 simple_qa（但要 slow L2）
+  if (/是什么[？?]/.test(input) && !/区别|比较|分析|对比/.test(text)) {
+    const definitions = (input.match(/是什么/g) || []).length;
+    if (definitions >= 2) {
+      return { mode: "slow", layer: "L2", intent: "simple_qa" };
     }
   }
 
