@@ -102,6 +102,7 @@ vi.mock("../../src/db/repositories", () => ({
     getById: vi.fn().mockResolvedValue(null),
     listActive: vi.fn().mockResolvedValue([]),
     markDone: vi.fn().mockResolvedValue(undefined),
+    hasPending: vi.fn().mockResolvedValue(false),
   },
   TaskArchiveRepo: {
     save: vi.fn().mockResolvedValue(undefined),
