@@ -1,0 +1,104 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Job 1: TypeScript 类型检查
+  # ─────────────────────────────────────────────────────────────────────────────
+  typecheck:
+    name: TypeScript Check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run TypeScript check
+        run: npx tsc --noEmit
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Job 2: 单元测试（不依赖 DB / 外部服务）
+  # ─────────────────────────────────────────────────────────────────────────────
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests
+        run: npx vitest run \
+          tests/services/router.test.ts \
+          tests/services/complexity-scorer.test.ts \
+          tests/services/llm-native-router.test.ts \
+          tests/services/tool-executor.test.ts \
+          tests/middleware/jwt.test.ts \
+          tests/services/phase4.test.ts
+        env:
+          NODE_ENV: test
+          FAST_MODEL: Qwen/Qwen2.5-7B-Instruct
+          SLOW_MODEL: Qwen/Qwen2.5-72B-Instruct
+          SILICONFLOW_API_KEY: ci-placeholder
+          JWT_SECRET: ci-test-secret-32-chars-minimum!!
+          JWT_ENABLED: "true"
+          AUTH_USERS: "testuser:testpass"
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/smartrouter_test
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Job 3: 离线路由 Benchmark（无需 API Key，无需 DB）
+  # ─────────────────────────────────────────────────────────────────────────────
+  benchmark-routing:
+    name: Routing Benchmark (Offline)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Run offline routing benchmark
+        run: node scripts/benchmark-ci.cjs --verbose
+        # CI Gate: Mode >= 80%, Intent >= 70%
+        # 失败时脚本返回 exit code 1，job 自动红
+
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-${{ github.run_number }}
+          path: evaluation/results/benchmark-ci-*.json
+          retention-days: 30

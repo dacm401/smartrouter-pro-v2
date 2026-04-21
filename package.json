@@ -19,7 +19,9 @@
     "benchmark:routing": "npx tsx ../evaluation/runner.ts --suite routing",
     "benchmark:quality": "npx tsx ../evaluation/runner.ts --suite quality",
     "benchmark:all": "npx tsx ../evaluation/runner.ts --suite all",
-    "benchmark:report": "npx tsx ../evaluation/runner.ts --suite all --report"
+    "benchmark:report": "npx tsx ../evaluation/runner.ts --suite all --report",
+    "benchmark:ci": "node scripts/benchmark-ci.cjs",
+    "benchmark:ci:verbose": "node scripts/benchmark-ci.cjs --verbose"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.24.0",
