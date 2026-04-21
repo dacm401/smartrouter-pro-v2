@@ -25,6 +25,22 @@ export function getApiConfig() {
 /** Exported so components can build streaming fetch URLs directly */
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
+// ── Auth helpers ──────────────────────────────────────────────────────────────
+
+function getToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem("srp_jwt_token");
+}
+
+function buildHeaders(extra?: Record<string, string>): Record<string, string> {
+  const token = getToken();
+  const headers: Record<string, string> = extra ?? {};
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+  return headers;
+}
+
 export async function sendMessage(message: string, history: any[], userId: string, sessionId: string) {
   const { apiBase, apiKey, fastModel, slowModel } = getApiConfig();
   const body: Record<string, any> = { user_id: userId, session_id: sessionId, message, history };
@@ -35,7 +51,7 @@ export async function sendMessage(message: string, history: any[], userId: strin
 
   const res = await fetch(`${apiBase}/api/chat`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...buildHeaders() },
     body: JSON.stringify(body),
   });
   const data = await res.json();
@@ -47,13 +63,17 @@ export async function sendMessage(message: string, history: any[], userId: strin
 
 export async function getDashboard(userId: string) {
   const { apiBase } = getApiConfig();
-  const res = await fetch(`${apiBase}/api/dashboard/${userId}`);
+  const res = await fetch(`${apiBase}/api/dashboard/${userId}`, {
+    headers: buildHeaders(),
+  });
   return res.json();
 }
 
 export async function getGrowth(userId: string) {
   const { apiBase } = getApiConfig();
-  const res = await fetch(`${apiBase}/api/growth/${userId}`);
+  const res = await fetch(`${apiBase}/api/growth/${userId}`, {
+    headers: buildHeaders(),
+  });
   return res.json();
 }
 
@@ -61,7 +81,7 @@ export async function sendFeedback(decisionId: string, type: string, userId: str
   const { apiBase } = getApiConfig();
   await fetch(`${apiBase}/api/feedback`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...buildHeaders() },
     body: JSON.stringify({ decision_id: decisionId, feedback_type: type, user_id: userId }),
   });
 }
@@ -75,7 +95,7 @@ export async function fetchTasks(userId: string, sessionId?: string) {
     ? `${apiBase}/v1/tasks/all?session_id=${encodeURIComponent(sessionId)}`
     : `${apiBase}/v1/tasks/all`;
   const res = await fetch(url, {
-    headers: { "X-User-Id": userId },
+    headers: { "X-User-Id": userId, ...buildHeaders() },
   });
   if (!res.ok) throw new Error(`加载任务列表失败 (${res.status})`);
   return res.json();
@@ -84,7 +104,7 @@ export async function fetchTasks(userId: string, sessionId?: string) {
 export async function fetchTaskDetail(taskId: string, userId: string) {
   const { apiBase } = getApiConfig();
   const res = await fetch(`${apiBase}/v1/tasks/${encodeURIComponent(taskId)}`, {
-    headers: { "X-User-Id": userId },
+    headers: { "X-User-Id": userId, ...buildHeaders() },
   });
   if (!res.ok) throw new Error(`加载任务详情失败 (${res.status})`);
   return res.json();
@@ -93,7 +113,7 @@ export async function fetchTaskDetail(taskId: string, userId: string) {
 export async function fetchTaskSummary(taskId: string, userId: string) {
   const { apiBase } = getApiConfig();
   const res = await fetch(`${apiBase}/v1/tasks/${encodeURIComponent(taskId)}/summary`, {
-    headers: { "X-User-Id": userId },
+    headers: { "X-User-Id": userId, ...buildHeaders() },
   });
   if (!res.ok) throw new Error(`加载任务摘要失败 (${res.status})`);
   return res.json();
@@ -103,7 +123,7 @@ export async function fetchEvidence(taskId: string, userId: string) {
   const { apiBase } = getApiConfig();
   const res = await fetch(
     `${apiBase}/v1/evidence?task_id=${encodeURIComponent(taskId)}`,
-    { headers: { "X-User-Id": userId } }
+    { headers: { "X-User-Id": userId, ...buildHeaders() } }
   );
   if (!res.ok) throw new Error(`加载证据列表失败 (${res.status})`);
   return res.json();
@@ -113,7 +133,7 @@ export async function fetchTraces(taskId: string, userId: string) {
   const { apiBase } = getApiConfig();
   const res = await fetch(
     `${apiBase}/v1/tasks/${encodeURIComponent(taskId)}/traces`,
-    { headers: { "X-User-Id": userId } }
+    { headers: { "X-User-Id": userId, ...buildHeaders() } }
   );
   if (!res.ok) throw new Error(`加载执行轨迹失败 (${res.status})`);
   return res.json();
@@ -140,7 +160,9 @@ export interface HealthStatus {
 
 export async function fetchHealth(): Promise<HealthStatus> {
   const { apiBase } = getApiConfig();
-  const res = await fetch(`${apiBase}/health`);
+  const res = await fetch(`${apiBase}/health`, {
+    headers: buildHeaders(),
+  });
   if (!res.ok) throw new Error(`加载健康状态失败 (${res.status})`);
   return res.json();
 }
@@ -160,7 +182,7 @@ export async function fetchMemory(userId: string, category?: string): Promise<{ 
   const url = category
     ? `${apiBase}/v1/memory?category=${encodeURIComponent(category)}`
     : `${apiBase}/v1/memory`;
-  const res = await fetch(url, { headers: { "X-User-Id": userId } });
+  const res = await fetch(url, { headers: { "X-User-Id": userId, ...buildHeaders() } });
   if (!res.ok) throw new Error(`加载记忆列表失败 (${res.status})`);
   return res.json() as Promise<{ entries: MemoryEntry[] }>;
 }
@@ -169,7 +191,7 @@ export async function deleteMemory(id: string, userId: string): Promise<void> {
   const { apiBase } = getApiConfig();
   const res = await fetch(`${apiBase}/v1/memory/${encodeURIComponent(id)}`, {
     method: "DELETE",
-    headers: { "X-User-Id": userId },
+    headers: { "X-User-Id": userId, ...buildHeaders() },
   });
   if (!res.ok) throw new Error(`删除记忆失败 (${res.status})`);
 }
@@ -183,7 +205,7 @@ export async function createMemoryEntry(
   const { apiBase } = getApiConfig();
   const res = await fetch(`${apiBase}/v1/memory`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "X-User-Id": userId },
+    headers: { "Content-Type": "application/json", "X-User-Id": userId, ...buildHeaders() },
     body: JSON.stringify({ category, content, source }),
   });
   if (!res.ok) {
@@ -197,7 +219,7 @@ export async function createMemoryEntry(
 export async function fetchDecision(taskId: string, userId: string) {
   const { apiBase } = getApiConfig();
   const res = await fetch(`${apiBase}/v1/tasks/${encodeURIComponent(taskId)}/decision`, {
-    headers: { "X-User-Id": userId },
+    headers: { "X-User-Id": userId, ...buildHeaders() },
   });
   if (!res.ok) throw new Error(`加载决策数据失败 (${res.status})`);
   return res.json();
@@ -207,7 +229,7 @@ export async function patchTask(taskId: string, userId: string, action: "resume"
   const { apiBase } = getApiConfig();
   const res = await fetch(`${apiBase}/v1/tasks/${encodeURIComponent(taskId)}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json", "X-User-Id": userId },
+    headers: { "Content-Type": "application/json", "X-User-Id": userId, ...buildHeaders() },
     body: JSON.stringify({ action }),
   });
   return res.ok;
@@ -224,7 +246,9 @@ export interface CostStats {
 
 export async function fetchCostStats(userId: string): Promise<CostStats> {
   const { apiBase } = getApiConfig();
-  const res = await fetch(`${apiBase}/api/cost-stats/${encodeURIComponent(userId)}`);
+  const res = await fetch(`${apiBase}/api/cost-stats/${encodeURIComponent(userId)}`, {
+    headers: buildHeaders(),
+  });
   if (!res.ok) throw new Error(`加载成本统计失败 (${res.status})`);
   return res.json() as Promise<CostStats>;
 }

@@ -1,6 +1,8 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { v4 as uuid } from "uuid";
+import { useAuth } from "@/contexts/AuthContext";
 import { ChatInterface } from "@/components/chat/ChatInterface";
 import { SettingsModal } from "@/components/chat/SettingsModal";
 import { TaskPanel } from "@/components/workbench/TaskPanel";
@@ -17,18 +19,26 @@ import ArchiveView from "@/components/views/ArchiveView";
 
 type NavView = "chat" | "tasks" | "memory" | "dashboard" | "archive";
 
-const DEFAULT_USER_ID = "dev-user";
-
 type WorkbenchTab = "evidence" | "trace" | "health" | "debug";
 
 export default function HomePage() {
+  const router = useRouter();
+  const { user, token, isLoading } = useAuth();
   const [showSettings, setShowSettings] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [workbenchTab, setWorkbenchTab] = useState<WorkbenchTab>("evidence");
-  const [userId, setUserId] = useState(DEFAULT_USER_ID);
+  // userId derived from auth — falls back to username so backend can route by identity
+  const userId = user?.username ?? "anonymous";
   const [activeNav, setActiveNav] = useState<NavView>("chat");
   const [sessionId, setSessionId] = useState<string>(() => uuid());
+
+  // Auth guard: redirect to login if not authenticated
+  useEffect(() => {
+    if (!isLoading && !token) {
+      router.replace("/login");
+    }
+  }, [isLoading, token, router]);
 
   const tabs: { id: WorkbenchTab; icon: string; label: string }[] = [
     { id: "evidence", icon: "🔍", label: "证据" },
@@ -36,6 +46,21 @@ export default function HomePage() {
     { id: "health", icon: "💚", label: "健康" },
     { id: "debug", icon: "🔧", label: "调试" },
   ];
+
+  // Show loading spinner while hydrating auth state
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-screen" style={{ backgroundColor: "var(--bg-base)" }}>
+        <div className="flex flex-col items-center gap-3">
+          <div className="text-3xl">🦀</div>
+          <div className="text-xs" style={{ color: "var(--text-muted)" }}>加载中…</div>
+        </div>
+      </div>
+    );
+  }
+
+  // Don't render app content if not authenticated (will redirect)
+  if (!token) return null;
 
   return (
     <div
@@ -45,7 +70,7 @@ export default function HomePage() {
       {/* Header */}
       <Header
         userId={userId}
-        onUserIdChange={setUserId}
+        onUserIdChange={() => {}} // no-op: identity is locked to auth user
         sidebarOpen={sidebarOpen}
         onToggleSidebar={() => setSidebarOpen((v) => !v)}
       />

@@ -2,6 +2,20 @@
 
 import { API_BASE } from "./api";
 
+function getToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem("srp_jwt_token");
+}
+
+function buildHeaders(extra?: Record<string, string>): Record<string, string> {
+  const token = getToken();
+  const headers: Record<string, string> = extra ?? {};
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+  return headers;
+}
+
 /** Archive task entry — mirrors backend TaskArchiveEntry */
 export interface ArchiveCommand {
   action: string;
@@ -46,7 +60,7 @@ export async function fetchArchivesBySession(
 ): Promise<{ entries: ArchiveEntry[]; count: number }> {
   const res = await fetch(
     `${API_BASE}/v1/archive/tasks?session_id=${encodeURIComponent(sessionId)}&limit=${limit}`,
-    { headers: { "X-User-Id": userId } }
+    { headers: { "X-User-Id": userId, ...buildHeaders() } }
   );
   if (!res.ok) throw new Error(`加载档案列表失败 (${res.status})`);
   return res.json() as Promise<{ entries: ArchiveEntry[]; count: number }>;
@@ -54,7 +68,7 @@ export async function fetchArchivesBySession(
 
 export async function fetchArchiveById(id: string, userId: string): Promise<ArchiveEntry> {
   const res = await fetch(`${API_BASE}/v1/archive/tasks/${encodeURIComponent(id)}`, {
-    headers: { "X-User-Id": userId },
+    headers: { "X-User-Id": userId, ...buildHeaders() },
   });
   if (!res.ok) throw new Error(`加载档案详情失败 (${res.status})`);
   return res.json() as Promise<ArchiveEntry>;
@@ -63,7 +77,7 @@ export async function fetchArchiveById(id: string, userId: string): Promise<Arch
 export async function deleteArchive(id: string, userId: string): Promise<void> {
   const res = await fetch(`${API_BASE}/v1/archive/tasks/${encodeURIComponent(id)}`, {
     method: "DELETE",
-    headers: { "X-User-Id": userId },
+    headers: { "X-User-Id": userId, ...buildHeaders() },
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
@@ -78,7 +92,7 @@ export async function updateArchiveStatus(
 ): Promise<void> {
   const res = await fetch(`${API_BASE}/v1/archive/tasks/${encodeURIComponent(id)}/status`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json", "X-User-Id": userId },
+    headers: { "Content-Type": "application/json", "X-User-Id": userId, ...buildHeaders() },
     body: JSON.stringify({ status }),
   });
   if (!res.ok) throw new Error(`更新档案状态失败 (${res.status})`);
