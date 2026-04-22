@@ -35,9 +35,12 @@
 
 ---
 
-## Sprint 51 规划：G4 Delegation Learning Loop
+## Sprint 51 规划：双轨并行（Gap 收口 + G4 学习闭环）
 
-### P0 — G4 核心
+> ⚠️ **Gap Analysis 结论**：Phase D G1/G2/G3 已完成，但整体存在 3 个 P0 缺口和 5 个 P1 缺口。
+> Sprint 51 必须双轨并行：**G4 学习闭环**（原计划）+ **测试覆盖收口**（gap P0）。
+
+### 轨道 A — G4 Delegation Learning Loop（原计划 P0）
 
 | 卡片 | 描述 | 关键交付物 |
 |------|------|-----------|
@@ -58,11 +61,32 @@
 - **四层成功标准**：`routing_success / execution_success / value_success / user_success`
 - `feedback_source / notes_json`
 
+### 轨道 B — 测试覆盖收口（Gap P0）
+
+| 卡片 | 描述 | 关键文件 | 背景 |
+|------|------|----------|------|
+| **T-ORCH** | `orchestrator.ts` 单元测试 | `tests/services/orchestrator.test.ts` | 核心编排逻辑无任何测试 |
+| **T-LLM-NAT** | `llm-native-router.ts` 单元测试 | `tests/services/llm-native-router.test.ts` | Gated Delegation 核心函数缺单元测试 |
+| **T-P4** | Phase 4 redaction/permission 单元测试 | `tests/services/phase4/` | redactor/permission 代码已实现但无测试 |
+
+### 轨道 C — 配置安全收口（Gap P1，并行可做）
+
+| 卡片 | 描述 | 关键文件 | 背景 |
+|------|------|----------|------|
+| **CFG-SEC** | JWT secret 启动校验 + Redis dead code 清理 | `config.ts` | JWT 默认空字符串，Redis 配置无连接代码 |
+
 ---
 
-## Sprint 52+ 规划（Phase D 后续 + docx 历史遗留）
+## Sprint 52 规划：Phase D 闭环 + P1 Gap 补全
 
-> 整合 04-18 docx 剩余待办 + Phase D 自然延伸
+> 背景：Sprint 51 G4 + 测试覆盖完成后，Phase D 核心闭环完成。Sprint 52 承接所有 P1 gap 剩余项。
+
+### P1 — 测试覆盖补全（gap 延续）
+
+| 卡片 | 描述 | 关键文件 | 背景 |
+|------|------|----------|------|
+| **T-P5** | Phase 5 存储后端单元测试 | `tests/services/phase5/storage-backend.test.ts` | local/s3/pg 三种实现无测试 |
+| **T-ERR** | fire-and-forget 静默吞错 → console.warn | 各 `.catch()` 处 | 非关键路径静默失败应改为 warn 日志 |
 
 ### P1 — Memory / Evidence 效果增强
 
@@ -151,10 +175,14 @@
 2026-04-22     │  Sprint 50 COMPLETE ✅  G1/G2/G3 全链路 + E2E 测试
                │  → Phase 1.5 P0 三项已通过 G1/G2/G3 实现覆盖
                │
-Sprint 51 →    │  G4 Delegation Learning Loop ⏳
-               │  P0: delegation_logs 事实表 + 日志写入 pipeline
+Sprint 51 →    │  双轨并行 ⏳
+               │  轨道A: G4 delegation_logs + 日志 pipeline
+               │  轨道B: T-ORCH + T-LLM-NAT + T-P4 测试覆盖
+               │  轨道C: CFG-SEC JWT/Redis 安全收口
                │
-Sprint 52+ →   │  G4 数据反馈驱动 P1/P2/P3 优化
+Sprint 52+ →   │  Phase D 闭环 + P1 gap 补全
+               │  T-P5: Phase 5 存储后端测试
+               │  T-ERR: fire-and-forget → warn 日志
                │  E1/E2: Evidence intent-aware boost
                │  S1:   Slow prompt 最终版 review
                │  SSE1/2: SSE done 双路 + stream 字段
@@ -167,4 +195,4 @@ Sprint 52+ →   │  G4 数据反馈驱动 P1/P2/P3 优化
 ---
 
 *横行天下，一钳定乾坤 🦀*
-*最后更新：2026-04-22*
+*最后更新：2026-04-22（v1.1.2-rc: Sprint 51 双轨规划 + Gap P0/P1 正式排入）*
