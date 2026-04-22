@@ -291,7 +291,7 @@ export class ToolExecutor {
       const rawBody = truncated;
       // Prefer structured JSON snippet as evidence content; fall back to raw text
       let evidenceContent: string;
-      let evidenceScore: number | null = null;
+      let evidenceScore: number | undefined = undefined;
       try {
         const parsed = JSON.parse(rawBody);
         evidenceContent = JSON.stringify(parsed).slice(0, 4096);

@@ -1317,7 +1317,7 @@ export interface RedactionConfig {
   /** 脱敏字符（默认 "*"） */
   maskChar?: string;
   /** 脱敏模式："last4" | "first6_last4" | "email_style" | "full" */
-  maskPattern?: "last4" | "first6_last4" | "email_style" | "full";
+  maskPattern?: "last4" | "first3_last4" | "first6_last4" | "email_style" | "full";
   /** 替换文本（用于 REPLACE 动作） */
   replacement?: string;
   /** 截断最大长度（用于 TRUNCATE 动作） */

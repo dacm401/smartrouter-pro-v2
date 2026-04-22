@@ -454,18 +454,18 @@ async function routeByGatedDecision(
     confidence: gated.systemConfidence,
     needs_archive: gated.routedAction !== "direct_answer",
     direct_response: gated.routedAction === "direct_answer"
-      ? { content: (v2Decision?.direct_response as { content?: string })?.content ?? (language === "zh" ? "好的。" : "Got it.") }
+      ? { style: "natural" as const, content: (v2Decision?.direct_response as { content?: string })?.content ?? (language === "zh" ? "好的。" : "Got it.") }
       : undefined,
     clarification: gated.routedAction === "ask_clarification"
-      ? { question_text: (v2Decision?.clarification as { question_text?: string })?.question_text ?? (language === "zh" ? "能再具体一点吗？" : "Could you be more specific?"), clarification_reason: gated.features.query_too_vague ? "请求模糊" : "" }
+      ? { question_id: "q1", question_text: (v2Decision?.clarification as { question_text?: string })?.question_text ?? (language === "zh" ? "能再具体一点吗？" : "Could you be more specific?"), clarification_reason: gated.features.query_too_vague ? "请求模糊" : "需要更多信息" }
       : undefined,
     command: (gated.routedAction === "delegate_to_slow" || gated.routedAction === "execute_task")
       ? {
-          command_type: gated.routedAction === "execute_task" ? "execute_plan" : "delegate_analysis",
+          command_type: gated.routedAction === "execute_task" ? "execute_plan" as const : "delegate_analysis" as const,
           task_type: "analysis",
           task_brief: (v2Decision?.command as { task_brief?: string })?.task_brief ?? message.substring(0, 200),
           goal: (v2Decision?.command as { task_brief?: string })?.task_brief ?? message,
-          constraints: Array.isArray((v2Decision?.command as { constraints?: unknown[] })?.constraints) ? (v2Decision.command as { constraints: unknown[] }).constraints : [],
+          constraints: v2Decision && Array.isArray((v2Decision.command as { constraints?: unknown[] })?.constraints) ? (v2Decision.command as { constraints: unknown[] }).constraints as string[] : [],
         }
       : undefined,
   };
