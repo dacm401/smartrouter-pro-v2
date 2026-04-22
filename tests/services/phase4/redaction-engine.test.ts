@@ -7,12 +7,12 @@ import {
   RedactionEngine,
   getRedactionEngine,
   resetRedactionEngine,
-} from "../../src/services/phase4/redaction-engine";
+} from "../../../src/services/phase4/index";
 import {
   DataRedactionRule,
   RedactionAction,
   RedactionContext,
-} from "../../src/types";
+} from "../../../src/types/index";
 
 // 测试数据
 const TEST_CONTEXT: RedactionContext = {

@@ -10,6 +10,7 @@
 // Re-export local implementation (for backward compatibility)
 export {
   LocalArchiveStorage,
+  LocalArchiveStore,
 } from "./local-archive-store";
 export type {
   LocalArchiveConfig,

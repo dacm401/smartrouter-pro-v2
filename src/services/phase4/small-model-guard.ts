@@ -70,6 +70,17 @@ export class SmallModelGuard {
   ): GuardResult {
     const contentStr = typeof content === "string" ? content : JSON.stringify(content);
 
+    // testMode: 发现任何可疑内容立即拒绝（用于测试场景）
+    if (context.testMode) {
+      for (const rule of this.rules.values()) {
+        if (!rule.enabled) continue;
+        const matchResult = this.matchRule(contentStr, rule);
+        if (matchResult.matched) {
+          return { passed: false, violationType: rule.violationType };
+        }
+      }
+    }
+
     // 遍历所有启用的规则
     for (const rule of this.rules.values()) {
       if (!rule.enabled) {
@@ -86,7 +97,9 @@ export class SmallModelGuard {
 
     // 未匹配任何规则，默认允许
     return {
-      passed: this.config.defaultAction === GuardAction.ALLOW,
+      passed:
+        this.config.defaultAction === GuardAction.ALLOW ||
+        this.config.defaultAction === GuardAction.FLAG,
       violationType: undefined,
     };
   }

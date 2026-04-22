@@ -22,7 +22,6 @@ import { getSelectedAction } from "./system-confidence.js";
 import {
   hasStrongBoundarySignal,
   isCalibratableSignal,
-  type KnowledgeBoundarySignal as KBSignal,
 } from "./knowledge-boundary-signals.js";
 
 export interface CalibratedDecision {

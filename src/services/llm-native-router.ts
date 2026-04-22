@@ -44,7 +44,6 @@ async function getPhase4() {
 
 // ── Gating: Gated Delegation v2 ───────────────────────────────────────────────
 
-import type { DecisionFeatures, ManagerDecisionType } from "../types/index.js";
 import { calculateSystemConfidence, getSelectedAction } from "./gating/system-confidence.js";
 import { calibrateWithPolicy } from "./gating/policy-calibrator.js";
 import { shouldRerank, ruleBasedRerank } from "./gating/delegation-reranker.js";
@@ -324,7 +323,8 @@ export async function routeWithManagerDecision(
   }
 
   // Step 4: 按 Gated Delegation 最终结果路由（KB signals 已在 gatedResult.knowledgeBoundarySignals 中）
-  return routeByGatedDecision(gatedResult, { message, user_id, session_id, language, reqApiKey, raw: managerOutput });
+  const v2Decision = tryParseV2Decision(managerOutput);
+  return routeByGatedDecision(gatedResult, { message, user_id, session_id, language, reqApiKey, rawOutput: managerOutput, v2Decision });
 }
 
 // ── Fast Manager 调用 ─────────────────────────────────────────────────────────
@@ -366,6 +366,20 @@ async function callManagerModel(input: {
 }
 
 // ── Gated Delegation: 解析 v2 格式 ───────────────────────────────────────────
+
+/** 尝试解析 v2 decision JSON（用于路由字段提取） */
+function tryParseV2Decision(text: string): Record<string, unknown> | null {
+  try {
+    const match =
+      text.match(/```json\s*([\s\S]*?)\s*```/)?.[1] ??
+      text.match(/```\s*([\s\S]*?)\s*```/)?.[1] ??
+      text.match(/(\{[\s\S]*\})/)?.[1];
+    if (!match) return null;
+    return JSON.parse(match.trim());
+  } catch {
+    return null;
+  }
+}
 
 function parseGatedDecision(
   text: string,
@@ -419,14 +433,17 @@ interface GatedRouteContext {
   session_id: string;
   language: "zh" | "en";
   reqApiKey?: string;
-  raw: string;
+  /** 原始字符串（用于 raw_manager_output） */
+  rawOutput: string;
+  /** 解析后的 v2 decision（用于路由字段） */
+  v2Decision: Record<string, unknown> | null;
 }
 
 async function routeByGatedDecision(
   gated: GatedDelegationContext,
   ctx: GatedRouteContext
 ): Promise<LLMNativeRouterResult> {
-  const { message, user_id, session_id, language, reqApiKey, raw } = ctx;
+  const { message, user_id, session_id, language, reqApiKey, rawOutput, v2Decision } = ctx;
 
   // 构建向后兼容的 V1 ManagerDecision（用于 SSE/Archive/旧逻辑）
   const decision: ManagerDecision = {
@@ -437,18 +454,18 @@ async function routeByGatedDecision(
     confidence: gated.systemConfidence,
     needs_archive: gated.routedAction !== "direct_answer",
     direct_response: gated.routedAction === "direct_answer"
-      ? { content: raw.direct_response?.content ?? (language === "zh" ? "好的。" : "Got it.") }
+      ? { content: (v2Decision?.direct_response as { content?: string })?.content ?? (language === "zh" ? "好的。" : "Got it.") }
       : undefined,
     clarification: gated.routedAction === "ask_clarification"
-      ? { question_text: raw.clarification?.question_text ?? (language === "zh" ? "能再具体一点吗？" : "Could you be more specific?"), clarification_reason: gated.features.query_too_vague ? "请求模糊" : "" }
+      ? { question_text: (v2Decision?.clarification as { question_text?: string })?.question_text ?? (language === "zh" ? "能再具体一点吗？" : "Could you be more specific?"), clarification_reason: gated.features.query_too_vague ? "请求模糊" : "" }
       : undefined,
     command: (gated.routedAction === "delegate_to_slow" || gated.routedAction === "execute_task")
       ? {
           command_type: gated.routedAction === "execute_task" ? "execute_plan" : "delegate_analysis",
           task_type: "analysis",
-          task_brief: raw.command?.task_brief ?? message.substring(0, 200),
-          goal: raw.command?.task_brief ?? message,
-          constraints: Array.isArray(raw.command?.constraints) ? raw.command.constraints : [],
+          task_brief: (v2Decision?.command as { task_brief?: string })?.task_brief ?? message.substring(0, 200),
+          goal: (v2Decision?.command as { task_brief?: string })?.task_brief ?? message,
+          constraints: Array.isArray((v2Decision?.command as { constraints?: unknown[] })?.constraints) ? (v2Decision.command as { constraints: unknown[] }).constraints : [],
         }
       : undefined,
   };
@@ -472,7 +489,7 @@ async function routeByGatedDecision(
   });
 
   // 按最终路由动作分发
-  return routeByDecision(decision, ctx);
+  return routeByDecision(decision, { ...ctx, raw: rawOutput });
 }
 
 // ── 决策路由 ─────────────────────────────────────────────────────────────────

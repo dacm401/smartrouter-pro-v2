@@ -66,6 +66,18 @@ export class RedactionEngine {
     content: string | object,
     context?: RedactionContext
   ): RedactedContent {
+    // 安全处理 null / undefined
+    if (content == null) {
+      return {
+        content: content as unknown as string,
+        originalContent: undefined,
+        appliedRuleIds: [],
+        stats: { totalMatches: 0, fieldsRedacted: 0, charactersMasked: 0 },
+        isFullyRedacted: false,
+        reason: "输入为空，跳过处理",
+      };
+    }
+
     const appliedRuleIds: string[] = [];
     let totalMatches = 0;
     let charactersMasked = 0;
@@ -141,7 +153,7 @@ export class RedactionEngine {
     // ── 正则匹配 ────────────────────────────────────────────────────────────
     if (rule.match.regex) {
       try {
-        const regex = new RegExp(rule.match.regex, "g");
+        const regex = new RegExp(rule.match.regex, "gi");
         let match;
 
         while ((match = regex.exec(content)) !== null) {
@@ -150,7 +162,7 @@ export class RedactionEngine {
 
           const redacted = this.applyMaskAction(original, rule);
           content = content.replace(original, redacted);
-          charactersMasked += original.length - redacted.length;
+          charactersMasked += Math.max(0, original.length - redacted.length);
 
           // 防止无限循环
           if (matchCount > 1000) break;
@@ -161,17 +173,38 @@ export class RedactionEngine {
     }
 
     // ── 关键词匹配 ──────────────────────────────────────────────────────────
+    // 对于 TRUNCATE / HASH 动作：检测到关键词后对整体内容处理
+    // 对于其他动作：替换关键词本身
     if (rule.match.keywords && rule.match.keywords.length > 0) {
-      for (const keyword of rule.match.keywords) {
-        const regex = new RegExp(this.escapeRegex(keyword), "gi");
-        let match;
+      const hasKeyword = rule.match.keywords.some((kw) =>
+        content.toLowerCase().includes(kw.toLowerCase())
+      );
 
-        while ((match = regex.exec(content)) !== null) {
+      if (hasKeyword) {
+        if (rule.action === RedactionAction.TRUNCATE || rule.action === RedactionAction.HASH) {
+          // 对整个内容执行动作
           matchCount++;
-          const original = match[0];
-          const redacted = this.applyMaskAction(original, rule);
-          content = content.replace(original, redacted);
-          charactersMasked += original.length - redacted.length;
+          const original = content;
+          const redacted = this.applyMaskAction(content, rule);
+          charactersMasked += Math.max(0, original.length - redacted.length);
+          content = redacted;
+        } else {
+          // 替换每个关键词出现的位置
+          for (const keyword of rule.match.keywords) {
+            const regex = new RegExp(this.escapeRegex(keyword), "gi");
+            let match;
+
+            while ((match = regex.exec(content)) !== null) {
+              matchCount++;
+              const original = match[0];
+              const redacted = this.applyMaskAction(original, rule);
+              content = content.replace(original, redacted);
+              charactersMasked += Math.max(0, original.length - redacted.length);
+              // replace 会改变字符串，需要重置 regex lastIndex
+              regex.lastIndex = 0;
+              break; // 每个关键词只替换一轮，避免无限循环
+            }
+          }
         }
       }
     }
@@ -215,13 +248,24 @@ export class RedactionEngine {
         }
       }
 
-      // ── 关键词匹配字段名 ────────────────────────────────────────────────
+      // ── 字段路径匹配（fieldPath 存在时：只处理匹配的字段）──────────────
+      if (rule.match.fieldPath) {
+        if (!this.matchFieldPath(key, rule.match.fieldPath)) {
+          result[key] = value;
+          continue;
+        }
+      }
+
+      // ── 关键词匹配字段名 ─────────────────────────────────────────────
+      // 如果规则有 keywords，检查字段名是否匹配
+      let fieldNameMatched = false;
       if (rule.match.keywords && rule.match.keywords.length > 0) {
         const keyLower = key.toLowerCase();
-        const matched = rule.match.keywords.some((kw) =>
+        fieldNameMatched = rule.match.keywords.some((kw) =>
           keyLower.includes(kw.toLowerCase())
         );
-        if (!matched) {
+        // 规则只有 keywords（无 fieldPath 且无 regex）时，不匹配字段名则跳过
+        if (!fieldNameMatched && !rule.match.fieldPath && !rule.match.regex) {
           result[key] = value;
           continue;
         }
@@ -229,6 +273,14 @@ export class RedactionEngine {
 
       // ── 处理值 ──────────────────────────────────────────────────────────
       if (typeof value === "string") {
+        if (fieldNameMatched) {
+          // 字段名匹配关键词：直接对整个值执行 action（优先级高于值内容扫描）
+          const redacted = this.applyMaskAction(value, rule);
+          totalMatchCount++;
+          totalCharsMasked += Math.max(0, value.length - redacted.length);
+          result[key] = redacted;
+          continue;
+        }
         const redactResult = this.redactString(value, rule, _context);
         if (redactResult.matched) {
           totalMatchCount += redactResult.matchCount;
@@ -276,9 +328,11 @@ export class RedactionEngine {
       case RedactionAction.REPLACE:
         return config.replacement || "***REDACTED***";
 
-      case RedactionAction.TRUNCATE:
+      case RedactionAction.TRUNCATE: {
         const maxLen = config.maxLength || 10;
-        return value.substring(0, maxLen) + (value.length > maxLen ? "..." : "");
+        // 总是追加省略号，表明内容已被截断处理
+        return value.substring(0, maxLen) + "...";
+      }
 
       case RedactionAction.HASH:
         return this.simpleHash(value);
@@ -303,6 +357,14 @@ export class RedactionEngine {
       case "last4":
         if (value.length <= 4) return maskChar.repeat(value.length);
         return maskChar.repeat(value.length - 4) + value.slice(-4);
+
+      case "first3_last4":
+        if (value.length <= 7) return maskChar.repeat(value.length);
+        return (
+          value.substring(0, 3) +
+          maskChar.repeat(value.length - 7) +
+          value.slice(-4)
+        );
 
       case "first6_last4":
         if (value.length <= 10) return maskChar.repeat(value.length);

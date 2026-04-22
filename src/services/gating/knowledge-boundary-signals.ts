@@ -40,7 +40,7 @@ interface SignalPatternCluster {
    * 某些信号需要与当前时态词联用才高强度命中
    * 如果没有时态词，strength 打折扣
    */
-  temporalBoostPatterns?: RegExp[];
+  temporalBoostPatterns?: RegExp | RegExp[];
   /** temporal 联用时的 strength 加成 */
   temporalBoostStrength?: number;
 }
@@ -176,7 +176,10 @@ function matchCluster(
   // 计算最终 strength：有 temporal boost 时提升
   let strength = cluster.strength;
   if (cluster.temporalBoostPatterns && cluster.temporalBoostStrength) {
-    if (cluster.temporalBoostPatterns.test(message)) {
+    const boostPatterns = Array.isArray(cluster.temporalBoostPatterns)
+      ? cluster.temporalBoostPatterns
+      : [cluster.temporalBoostPatterns];
+    if (boostPatterns.some((p) => p.test(message))) {
       strength = cluster.temporalBoostStrength;
       reasons.push("时态词联用，强化信号");
     }
