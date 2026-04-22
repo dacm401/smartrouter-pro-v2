@@ -81,11 +81,12 @@ services:
       - .env
 
   frontend:
-    build: ./frontend
+    build:
+      context: ../20260416214742/smartrouter-pro/frontend
     ports:
       - "3000:3000"
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:3001
+      NEXT_PUBLIC_API_URL: http://backend:3001
     depends_on:
       - backend
 
