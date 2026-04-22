@@ -61,7 +61,8 @@ jobs:
           tests/services/llm-native-router.test.ts \
           tests/services/tool-executor.test.ts \
           tests/middleware/jwt.test.ts \
-          tests/services/phase4.test.ts
+          tests/services/phase4.test.ts \
+          tests/services/orchestrator.test.ts
         env:
           NODE_ENV: test
           FAST_MODEL: Qwen/Qwen2.5-7B-Instruct
@@ -73,7 +74,7 @@ jobs:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/smartrouter_test
 
   # ─────────────────────────────────────────────────────────────────────────────
-  # Job 3: 离线路由 Benchmark（无需 API Key，无需 DB）
+  # Job 3: 离线路由 Benchmark（66 cases，CI gate: Mode>=80%, Intent>=70%）
   # ─────────────────────────────────────────────────────────────────────────────
   benchmark-routing:
     name: Routing Benchmark (Offline)
@@ -91,7 +92,7 @@ jobs:
           node-version: "20"
 
       - name: Run offline routing benchmark
-        run: node scripts/benchmark-ci.cjs --verbose
+        run: node scripts/benchmark-ci.cjs --suite routing --verbose
         # CI Gate: Mode >= 80%, Intent >= 70%
         # 失败时脚本返回 exit code 1，job 自动红
 
@@ -99,6 +100,68 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: benchmark-results-${{ github.run_number }}
+          name: benchmark-routing-${{ github.run_number }}
           path: evaluation/results/benchmark-ci-*.json
+          retention-days: 30
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Job 4: KB Signal 检测 Benchmark（22 cases，CI gate: 准确率>=80%）
+  # ─────────────────────────────────────────────────────────────────────────────
+  benchmark-kb:
+    name: KB Signal Benchmark
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Run KB signal benchmark
+        run: node scripts/benchmark-ci.cjs --suite kb
+        # CI Gate: KB Signal 准确率 >= 80%
+
+      - name: Upload KB benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-kb-${{ github.run_number }}
+          path: evaluation/results/benchmark-kb-*.json
+          retention-days: 30
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Job 5: Delegation Benchmark（40 cases，离线规则 baseline）
+  # ─────────────────────────────────────────────────────────────────────────────
+  benchmark-delegation:
+    name: Delegation Benchmark (Offline Reference)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Run delegation benchmark (offline reference)
+        run: node scripts/benchmark-ci.cjs --suite delegation
+        # ⚠️ 此套件设计用于在线 LLM 路由
+        # ⚠️ 离线规则模式下 Mode>=30%/Intent>=20% 仅作参考基线
+        # ⚠️ 真实 LLM 路由评估请运行 benchmark-routing.cjs（需后端 + SiliconFlow）
+
+      - name: Upload delegation benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-delegation-${{ github.run_number }}
+          path: evaluation/results/benchmark-delegation-*.json
           retention-days: 30

@@ -77,9 +77,27 @@
 
 ---
 
-## Sprint 52 规划：Phase D 闭环 + P1 Gap 补全
+## Sprint 52 规划：M7 Benchmark 护栏升级 + M1 协议冻结
 
-> 背景：Sprint 51 G4 + 测试覆盖完成后，Phase D 核心闭环完成。Sprint 52 承接所有 P1 gap 剩余项。
+> 背景：Sprint 51 完成 G4 + 测试覆盖，Phase D 核心闭环。M7 benchmark runner 是所有后续 Sprint 的护栏，必须先建立。
+
+### M7 — Benchmark Runner 升级（Sprint 52 前半）
+
+| 卡片 | 描述 | 关键交付物 |
+|------|------|-----------|
+| **M7-B1** | 扩测 routing cases | 新增 delegation-benchmark.json（40 cases G1/G2/G3/KB） |
+| **M7-B2** | benchmark-ci.cjs 多 suite 支持 | routing / kb / delegation 三套独立运行 |
+| **M7-B3** | CI workflow 更新 | 新增 KB suite job + Delegation suite job |
+| **M7-B4** | CI artifact 上传 + 文档 | benchmark README + 3套独立 artifact |
+
+**Benchmark CI 架构（Sprint 52）：**
+```
+CI Job 1: typecheck      — tsc --noEmit
+CI Job 2: unit-tests     — vitest（routing/complexity/llm-native-router/tool-executor/jwt/phase4/orchestrator）
+CI Job 3: benchmark-routing   — 66 cases / Mode>=80% / Intent>=70%   (gate)
+CI Job 4: benchmark-kb        — 22 cases / 准确率>=80%              (gate)
+CI Job 5: benchmark-delegation — 40 cases / Mode>=30% (baseline)    (reference)
+```
 
 ### P1 — 测试覆盖补全（gap 延续）
 

@@ -244,6 +244,8 @@ chatRouter.post("/chat", async (c) => {
           } catch (e: any) {
             console.error("[stream-llm] SSE error:", e.message);
             await s.write(`data: ${JSON.stringify({ type: "error", stream: e.message })}\n\n`);
+            // M1-SSE: SSE 失败也需要 done 事件，双路完整闭环
+            await s.write(`data: ${JSON.stringify({ type: "done" })}\n\n`);
           }
         });
       }
@@ -678,6 +680,9 @@ chatRouter.post("/chat", async (c) => {
           } catch (e: any) {
             console.error("[stream] pollArchiveAndYield error:", e.message);
             await s.write(`data: ${JSON.stringify({ type: "error", stream: "轮询出错", routing_layer: "L2" })}\n\n`);
+            // M1-SSE: pollArchiveAndYield 异常也需要 done 事件
+            const orchArchiveId = orchResult.delegation?.task_id;
+            await s.write(`data: ${JSON.stringify({ type: "done", routing_layer: "L2", archive_id: orchArchiveId, task_id: orchArchiveId })}\n\n`);
           }
           // Archive E2E 修复：done 事件带上 archive_id
           const orchArchiveId = orchResult.delegation?.task_id;
@@ -749,6 +754,8 @@ chatRouter.post("/chat", async (c) => {
           } catch (streamErr: any) {
             console.error("[stream] Model stream error:", streamErr.message);
             await s.write(`data: ${JSON.stringify({ type: "error", stream: streamErr.message, routing_layer: routingLayer })}\n\n`);
+            // M1-SSE: stream 失败也需要 done 事件，双路完整闭环
+            await s.write(`data: ${JSON.stringify({ type: "done", routing_layer: routingLayer })}\n\n`);
             return;
           }
 

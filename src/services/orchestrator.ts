@@ -906,6 +906,7 @@ export async function* pollArchiveAndYield(
           stream: `${msgs.done}\n\n${synthesizedContent}`,
           routing_layer: "L2",
         };
+        // M1-SSE: done 事件在 chat.ts delegation 路径末尾发送（带 archive_id/routing_layer）
         await TaskArchiveRepo.markDelivered(taskId).catch(() => {});
       }
       break;
@@ -915,6 +916,9 @@ export async function* pollArchiveAndYield(
       const exec = task.slow_execution as Record<string, unknown> | null;
       const errors = (Array.isArray(exec?.errors) ? exec.errors : []) as string[];
       yield { type: "error", stream: `任务执行失败: ${errors[0] ?? "Unknown error"}`, routing_layer: "L2" };
+      // M1-SSE: failed 也需要 done 事件，双路完整闭环
+      yield { type: "done", routing_layer: "L2" };
+      await TaskArchiveRepo.markDelivered(taskId).catch(() => {});
       break;
     }
 

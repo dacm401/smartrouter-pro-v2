@@ -1,14 +1,24 @@
 #!/usr/bin/env node
 /**
- * SmartRouter Offline Benchmark (CI Mode)
+ * SmartRouter Benchmark CI Runner
  *
- * 不调用任何 API，使用规则引擎模拟路由决策。
- * 目的：在 CI 流水线中验证路由规则和 KB Signal 检测的正确性。
+ * 支持三套离线 benchmark，全部不调用 API：
+ *
+ * routing    — 规则路由 CI gate（Mode>=80%, Intent>=70%）
+ *              66 cases，覆盖 L0/L1/L2 fast vs slow 核心路径
+ *
+ * kb         — KB Signal 检测评估（准确率>=80%）
+ *              22 cases，验证 knowledge-boundary-signals.ts 检测规则
+ *
+ * delegation — Gated Delegation 决策基准（离线规则，仅记录）
+ *              ~35 cases，覆盖 G1/G2/G3 + KB Signal × Delegation
+ *              ⚠️ 此套件设计用于在线 LLM 路由评估
+ *              ⚠️ 离线规则模式下 Mode/Intent CI gate 仅供参考
  *
  * 用法：
- *   node scripts/benchmark-ci.cjs [--suite routing|kb] [--verbose]
- *   node scripts/benchmark-ci.cjs --suite kb --verbose
- *   node scripts/benchmark-ci.cjs --suite routing --verbose
+ *   node scripts/benchmark-ci.cjs [--suite routing|kb|delegation] [--verbose]
+ *   node scripts/benchmark-ci.cjs --suite delegation --verbose
+ *
  * 退出码：0 = PASS，1 = FAIL
  */
 
@@ -29,16 +39,22 @@ function getArgStr(name, defaultVal) {
 }
 function hasArg(name) { return args.includes(name); }
 
-const SUITE           = getArgStr("--suite", "routing");
-const THRESHOLD_MODE   = getArg("--threshold-mode",   80);
-const THRESHOLD_INTENT = getArg("--threshold-intent", 70);
-const THRESHOLD_KB     = getArg("--threshold-kb",      80);
-const VERBOSE          = hasArg("--verbose");
-const isKbSuite        = SUITE === "kb" || SUITE === "unknown";
+const SUITE            = getArgStr("--suite", "routing");
+const THRESHOLD_MODE    = getArg("--threshold-mode",    SUITE === "delegation" ? 30 : 80);
+const THRESHOLD_INTENT  = getArg("--threshold-intent",  SUITE === "delegation" ? 20 : 70);
+const THRESHOLD_KB      = getArg("--threshold-kb",      80);
+const VERBOSE           = hasArg("--verbose");
+const isKbSuite         = SUITE === "kb" || SUITE === "unknown";
+const isDelegationSuite = SUITE === "delegation";
 
 // ── 加载测试用例 ──────────────────────────────────────────────────────────────
 const TASK_DIR = path.join(__dirname, "..", "evaluation", "tasks");
-const SUITE_MAP = { routing: "routing-benchmark.json", kb: "unknown-by-definition.json", unknown: "unknown-by-definition.json" };
+const SUITE_MAP = {
+  routing:     "routing-benchmark.json",
+  kb:          "unknown-by-definition.json",
+  unknown:     "unknown-by-definition.json",
+  delegation:  "delegation-benchmark.json",
+};
 
 function loadSuite(suite) {
   const file = SUITE_MAP[suite] ?? (suite.includes(".json") ? suite : suite + ".json");
@@ -431,9 +447,122 @@ function runRoutingSuite() {
   process.exit(0);
 }
 
+// ── Delegation 套件：Gated Delegation 决策基准评估 ──────────────────────────────
+function runDelegationSuite() {
+  console.log(`\n=== Gated Delegation Benchmark ===`);
+  console.log(`用例数: ${cases.length}  |  Mode 阈值: ${THRESHOLD_MODE}%  |  Intent 阈值: ${THRESHOLD_INTENT}%\n`);
+  console.log(`⚠️  此套件设计用于在线 LLM 路由，离线规则模式下 Mode/Intent 仅供参考\n`);
+
+  const results = [];
+
+  for (const tc of cases) {
+    const prediction = ruleRouter(tc.input);
+    const kbSignal   = detectKbSignals(tc.input);
+    const modeOk    = prediction.mode   === tc.expected_mode;
+    const intentOk  = prediction.intent === tc.expected_intent;
+    const layerOk   = prediction.layer  === tc.expected_layer;
+    const scenario  = tc.scenario || "unknown";
+
+    results.push({
+      input:           tc.input,
+      expected_mode:    tc.expected_mode,
+      actual_mode:      prediction.mode,
+      expected_intent:  tc.expected_intent,
+      actual_intent:    prediction.intent,
+      expected_layer:   tc.expected_layer,
+      actual_layer:     prediction.layer,
+      scenario,
+      kb_signal:        kbSignal ? `${kbSignal.signal}(${kbSignal.weight})` : "none",
+      mode_ok: modeOk, intent_ok: intentOk, layer_ok: layerOk,
+    });
+
+    process.stdout.write(modeOk ? "✓" : "✗");
+  }
+  console.log("\n");
+
+  const total     = results.length;
+  const modeOk   = results.filter(r => r.mode_ok).length;
+  const intentOk = results.filter(r => r.intent_ok).length;
+  const layerOk  = results.filter(r => r.layer_ok).length;
+  const modeRate   = (modeOk   / total * 100);
+  const intentRate = (intentOk / total * 100);
+  const layerRate  = (layerOk  / total * 100);
+
+  console.log(`=== 结果汇总（离线规则模式）==`);
+  console.log(`总用例:         ${total}`);
+  console.log(`Mode  准确:     ${modeOk}/${total} = ${modeRate.toFixed(1)}%`);
+  console.log(`Intent 准确:    ${intentOk}/${total} = ${intentRate.toFixed(1)}%`);
+  console.log(`Layer  准确:    ${layerOk}/${total} = ${layerRate.toFixed(1)}%`);
+
+  // 按 Scenario 分组
+  const byScenario = {};
+  for (const r of results) {
+    const k = r.scenario;
+    if (!byScenario[k]) byScenario[k] = { total: 0, correct: 0 };
+    byScenario[k].total++;
+    if (r.mode_ok) byScenario[k].correct++;
+  }
+  console.log(`\n按 Scenario (Mode 准确):`);
+  for (const [scenario, s] of Object.entries(byScenario).sort()) {
+    console.log(`  ${scenario.padEnd(24)}: ${s.correct}/${s.total} = ${(s.correct / s.total * 100).toFixed(1)}%`);
+  }
+
+  // 失败用例
+  const failures = results.filter(r => !r.mode_ok);
+  if (failures.length > 0) {
+    console.log(`\n失败用例 (${failures.length}条，仅显示前10):`);
+    for (const f of failures.slice(0, 10)) {
+      console.log(`  [${f.expected_layer}/${f.expected_intent}][${f.scenario}]`);
+      console.log(`    exp:${f.expected_mode.padEnd(5)} got:${f.actual_mode.padEnd(5)} | "${f.input.substring(0, 60)}"`);
+    }
+    if (failures.length > 10) console.log(`  ... 及其他 ${failures.length - 10} 条`);
+  }
+
+  if (VERBOSE) {
+    console.log(`\n=== 全量明细 ===`);
+    for (const r of results) {
+      console.log(`${r.mode_ok ? "✓" : "✗"} [${r.expected_layer}/${r.expected_intent}][${r.scenario}] exp:${r.expected_mode} got:${r.actual_mode} | "${r.input.substring(0, 60)}"`);
+    }
+  }
+
+  // 写出结果
+  const outDir  = path.join(__dirname, "..", "evaluation", "results");
+  fs.mkdirSync(outDir, { recursive: true });
+  const outFile = path.join(outDir, `benchmark-delegation-${new Date().toISOString().split("T")[0]}.json`);
+  fs.writeFileSync(outFile, JSON.stringify({
+    run_date: new Date().toISOString(),
+    mode: "offline-rules-reference",
+    suite: "delegation",
+    total, mode_ok: modeOk, intent_ok: intentOk, layer_ok: layerOk,
+    mode_accuracy: `${modeRate.toFixed(1)}%`,
+    intent_accuracy: `${intentRate.toFixed(1)}%`,
+    layer_accuracy: `${layerRate.toFixed(1)}%`,
+    byScenario,
+    cases: results,
+  }, null, 2), "utf8");
+  console.log(`\n结果已写入: ${outFile}`);
+
+  // CI Gate（离线模式宽松阈值，仅作参考）
+  console.log(`\n=== CI Gate（离线规则参考值）===`);
+  const modePass   = modeRate   >= THRESHOLD_MODE;
+  const intentPass = intentRate >= THRESHOLD_INTENT;
+  console.log(`Mode   (${modeRate.toFixed(1)}% >= ${THRESHOLD_MODE}%):   ${modePass   ? "PASS" : "FAIL"}`);
+  console.log(`Intent (${intentRate.toFixed(1)}% >= ${THRESHOLD_INTENT}%): ${intentPass ? "PASS" : "FAIL"}`);
+  if (!modePass || !intentPass) {
+    console.error("\n⚠️  Delegation benchmark 在离线规则模式下未达 CI gate");
+    console.error("   建议：使用在线 benchmark（benchmark-routing.cjs + SiliconFlow）评估 LLM 路由");
+    console.error("Delegation Benchmark CI（离线）FAILED");
+    process.exit(1);
+  }
+  console.log("Delegation Benchmark CI PASSED");
+  process.exit(0);
+}
+
 // ── 调度器 ─────────────────────────────────────────────────────────────────────
 if (isKbSuite) {
   runKbSuite();
+} else if (isDelegationSuite) {
+  runDelegationSuite();
 } else {
   runRoutingSuite();
 }

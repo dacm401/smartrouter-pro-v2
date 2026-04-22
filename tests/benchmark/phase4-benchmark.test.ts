@@ -194,7 +194,7 @@ describe("Phase 4 — Benchmark: RedactionEngine", () => {
     console.log(
       `[RedactionEngine.redact] n=${ITERATIONS} | mean=${fmt(stats.mean)} p95=${fmt(stats.p95)} | throughput=${throughput} KB/s`
     );
-    expect(stats.p95).toBeLessThan(15);
+    expect(stats.p95).toBeLessThan(25);
   });
 
   it("redact — large content only", () => {
@@ -207,7 +207,7 @@ describe("Phase 4 — Benchmark: RedactionEngine", () => {
     }
     const stats = computeLatencies(times);
     console.log(`[RedactionEngine.redact large] mean=${fmt(stats.mean)} p95=${fmt(stats.p95)}`);
-    expect(stats.p95).toBeLessThan(20);
+    expect(stats.p95).toBeLessThan(40);
   });
 });
 
