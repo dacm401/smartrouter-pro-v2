@@ -385,6 +385,15 @@ async function callFastModelWithTools(
 
       currentMessages.push({ role: "assistant", content });
       currentMessages.push(...toolResults);
+
+      // 工具执行完毕后，注入整合指令，让模型直接输出完整答案而非raw JSON
+      const synthesisInstruction: ChatMessage = {
+        role: "user",
+        content: lang === "zh"
+          ? "请基于以上搜索结果，用清晰、自然的语言直接回答用户的问题。不要重复搜索结果的原始格式，整合成有条理的完整回答。"
+          : "Based on the search results above, answer the user's question clearly and naturally. Do not repeat raw search result format—synthesize into a complete, organized answer.",
+      };
+      currentMessages.push(synthesisInstruction);
       continue;
     }
 
