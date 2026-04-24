@@ -15,11 +15,24 @@ import { config } from "../config.js";
 
 const authRouter = new Hono();
 
+const isProduction = process.env.NODE_ENV === "production";
+
 // In-memory user store parsed from AUTH_USERS env var
 // Format: "user1:pass1,user2:pass2"
 function parseUsers(): Map<string, string> {
+  const raw = process.env.AUTH_USERS;
+  if (!raw) {
+    if (isProduction) {
+      throw new Error(
+        "[AUTH-SEC] AUTH_USERS environment variable is required in production. " +
+        "Format: 'user:pass,user2:pass2'. Do NOT ship with hardcoded credentials."
+      );
+    }
+    // Dev-only fallback — never reaches production
+    console.warn("[AUTH-SEC] AUTH_USERS not set. Using insecure dev default. DO NOT use in production.");
+    return new Map([["admin", "changeme"]]);
+  }
   const users = new Map<string, string>();
-  const raw = process.env.AUTH_USERS || "admin:changeme";
   for (const entry of raw.split(",")) {
     const [username, password] = entry.trim().split(":");
     if (username && password) {
@@ -32,9 +45,8 @@ function parseUsers(): Map<string, string> {
 const TOKEN_EXPIRY_SECONDS = 24 * 60 * 60; // 24 hours
 
 async function signToken(userId: string): Promise<string> {
-  const secret = new TextEncoder().encode(
-    config.jwt.secret || "dev-secret-CHANGE-ME-IN-PRODUCTION"
-  );
+  // P0-2: JWT secret 由 config.ts 提供，config.ts 已在 startup 校验长度
+  const secret = new TextEncoder().encode(config.jwt.secret);
   const alg = "HS256";
 
   const jwt = await new SignJWT({ sub: userId })

@@ -26,9 +26,8 @@ export async function verifyJwt(authHeader: string | undefined): Promise<string 
   const token = authHeader.slice(7);
   if (!token) return null;
 
-  const secret = new TextEncoder().encode(
-    config.jwt.secret || "dev-secret-CHANGE-ME-IN-PRODUCTION"
-  );
+  // P0-2: JWT secret 由 config.ts 提供，config.ts 已在 startup 校验长度
+  const secret = new TextEncoder().encode(config.jwt.secret);
 
   try {
     const { payload } = await jwtVerify(token, secret, { algorithms: [JWT_ALGORITHM] });
