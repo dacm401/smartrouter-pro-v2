@@ -27,12 +27,10 @@ import { formatExecutionResultsForPlanner } from "../services/execution-result-f
 // EL-003: Execution Loop
 import { taskPlanner } from "../services/task-planner.js";
 import { executionLoop } from "../services/execution-loop.js";
-// O-008: Weather search
-import { detectWeatherQuery, fetchRealTimeWeather, formatWeatherPrompt } from "../services/weather-search.js";
 // C3a: unified identity
 import { getContextUserId } from "../middleware/identity.js";
-// O-001: Orchestrator — 快模型先回复 + 委托慢模型后台执行
-import { orchestrator, getDelegationResult, pollArchiveAndYield, evaluateRouting, inferRoutingLayer } from "../services/orchestrator.js";
+// SSE 流式轮询（从 orchestrator.ts 迁移出来）
+import { pollArchiveAndYield } from "../services/phase3/sse-poller.js";
 // Phase 3.0: LLM-Native Router — ManagerDecision 驱动的路由
 import { routeWithManagerDecision } from "../services/llm-native-router.js";
 // O-007: 安抚功能 — 检测 pending 任务
@@ -117,21 +115,9 @@ chatRouter.post("/chat", async (c) => {
     // LLM-native routing: routing done by orchestrator, analyzeAndRoute returns empty routing
     const routing: import("../types/index.js").RoutingDecision = getDefaultRouting();
 
-    // ── O-001/O-006: Orchestrator 分支 ─────────────────────────────────────────
-    // 所有非 execute + 非 streaming 的请求都走 orchestrator
-    // 委托判断由 orchestrator.shouldDelegate() 在代码层完成
-    // 不委托：快模型人格化直接回复
-    // 委托：快模型人格化确认回复 → 后台慢模型 → 快模型人格化包装结果
-    // O-007 安抚：慢模型处理期间用户再发消息 → 使用安抚 prompt 回复
-    const useOrchestrator =
-      body.execute !== true &&
-      body.stream !== true &&
-      body.use_llm_native_routing !== true; // Phase 3.0 优先
-
-    // ── Phase 3.0: LLM-Native Manager-Worker 路由分支 ────────────────────────────
-    // 触发条件：body.use_llm_native_routing === true
-    // 路径：Fast Manager → ManagerDecision JSON → 路由分发
-    // 注意：必须在 useOrchestrator 判断之前，否则 orchestrator 先 return 了
+    // ── Phase 3.0: LLM-Native Manager-Worker 路由（默认路径）─────────────────────
+    // 所有非 execute 请求默认走 LLM-Native 路由
+    // LLM-Native 通过 routeWithManagerDecision → Manager 模型决策 → 四路分发
     if (body.use_llm_native_routing === true) {
 
       // ── SSE 流式分支：use_llm_native_routing=true + stream=true ────────────────
@@ -270,6 +256,7 @@ chatRouter.post("/chat", async (c) => {
       }
 
       if (llmNativeResult) {
+        // ✅ LLM-Native 路由成功 → 直接返回结果（见下方完整处理）
         const taskId = llmNativeResult.delegation?.task_id || uuid();
 
         // 记录 decision log（Phase 3.0 扩展）
@@ -352,134 +339,13 @@ chatRouter.post("/chat", async (c) => {
 
         return c.json(response);
       }
-      // llmNativeResult 为 null（Manager 模型失败）→ 继续走 orchestrator
+      // llmNativeResult === null（Manager 模型调用失败）→ 返回错误，不回退到旧路径
+        throw new Error("LLM-native routing failed: Manager model returned null. " +
+          "Set body.execute=true for execution mode or check model availability.");
     }
     // ── End Phase 3.0 LLM-Native 分支 ───────────────────────────────────────────
 
-    if (useOrchestrator) {
-      // O-007: 检测是否有 pending 的慢模型任务
-      let hasPendingTask = false;
-      let pendingTaskMessage: string | undefined;
-
-      try {
-        hasPendingTask = await DelegationArchiveRepo.hasPending(userId, sessionId);
-        if (hasPendingTask) {
-          const pendingTasks = await DelegationArchiveRepo.getPendingBySession(userId, sessionId);
-          if (pendingTasks.length > 0) {
-            pendingTaskMessage = pendingTasks[0].original_message;
-          }
-        }
-      } catch (e) {
-        // 检测失败不影响正常流程
-        console.warn("[chat] Failed to check pending delegation:", e);
-      }
-
-      const orchResult = await orchestrator({
-        message: body.message ?? "",
-        language: features.language as "zh" | "en",
-        user_id: userId,
-        session_id: sessionId,
-        history: body.history ?? [],
-        reqApiKey,
-        hasPendingTask,        // O-007: 安抚检测结果
-        pendingTaskMessage,     // O-007: pending 任务信息
-      });
-
-      // 实际路由结果：有委托 → slow，否则 → fast
-      const orchSelectedRole: "fast" | "slow" = orchResult.delegation ? "slow" : "fast";
-      const orchSelectedModel = orchSelectedRole === "slow" ? config.slowModel : config.fastModel;
-      const routingLayer: import("../services/orchestrator.js").RoutingLayer = orchSelectedRole === "slow" ? "L2" : orchResult.routing_info.tool_used === "web_search" ? "L1" : "L0";
-
-      // 记录 routing decision（沿用分析结果，selected_role 反映实际委托情况）
-      await logDecision({
-        id: uuid(),
-        user_id: userId,
-        session_id: sessionId,
-        timestamp: startTime,
-        input_features: features,
-        routing: {
-          ...routing,
-          selected_model: orchSelectedModel,
-          selected_role: orchSelectedRole,
-          selection_reason: `orchestrator(${orchSelectedRole}): ${routing.selection_reason}`,
-        },
-        context: {
-          original_tokens: 0,
-          compressed_tokens: 0,
-          compression_level: "L0",
-          compression_ratio: 0,
-          memory_items_retrieved: 0,
-          final_messages: [],
-          compression_details: [],
-        },
-        execution: {
-          model_used: orchSelectedModel,
-          input_tokens: 0,
-          output_tokens: 0,
-          total_cost_usd: 0,
-          latency_ms: Date.now() - startTime,
-          did_fallback: false,
-          response_text: orchResult.fast_reply,
-        },
-      }).catch((e) => console.error("Failed to log orchestrator decision:", e));
-
-      const taskId = orchResult.delegation?.task_id || uuid();
-
-      // 快模型回复 + 委托信息（供前端判断是否需要轮询）
-      const response: ChatResponse = {
-        message: orchResult.fast_reply,
-        decision: {
-          id: uuid(),
-          user_id: userId,
-          session_id: sessionId,
-          timestamp: startTime,
-          input_features: features,
-          routing: {
-            router_version: "orchestrator_v0.4",
-            scores: orchSelectedRole === "slow" ? { fast: 0.0, slow: 1.0 } : { fast: 1.0, slow: 0 },
-            confidence: 1.0,
-            selected_model: orchSelectedModel,
-            selected_role: orchSelectedRole,
-            selection_reason: orchSelectedRole === "slow" ? "orchestrator delegated to slow model" : "orchestrator direct reply",
-            fallback_model: orchSelectedRole === "slow" ? config.fastModel : config.slowModel,
-            routing_layer: routingLayer,  // Phase 2.0: 显式路由分层（L0/L1/L2）
-          },
-          context: {
-            original_tokens: 0,
-            compressed_tokens: 0,
-            compression_level: "L0",
-            compression_ratio: 0,
-            memory_items_retrieved: 0,
-            final_messages: [],
-            compression_details: [],
-          },
-          execution: {
-            model_used: orchSelectedModel,
-            input_tokens: 0,
-            output_tokens: 0,
-            total_cost_usd: 0,
-            latency_ms: Date.now() - startTime,
-            did_fallback: false,
-            response_text: orchResult.fast_reply,
-          },
-        },
-        task_id: taskId,
-        // O-001: 新增字段，告知前端是否有后台任务
-        delegation: orchResult.delegation
-          ? { task_id: orchResult.delegation.task_id, status: "triggered" }
-          : undefined,
-      };
-
-      return c.json(response);
-    }
-    // ── End O-001 Orchestrator 分支 ─────────────────────────────────────────────
-
-    // 如果请求级有指定模型，替换路由结果里的模型名
-    if (body.fast_model || body.slow_model) {
-      routing.selected_model = routing.selected_role === "fast" ? effectiveFastModel : effectiveSlowModel;
-      routing.fallback_model = routing.selected_role === "fast" ? effectiveSlowModel : effectiveFastModel;
-    }
-
+    // 注意：非 execute 请求已在 LLM-Native 分支 return，此处仅处理 execute 模式
     // ── EL-003: Execution mode ───────────────────────────────────────────────
     // Triggered when the client sets body.execute === true.
     // Routes the request through TaskPlanner + ExecutionLoop instead of
@@ -612,196 +478,9 @@ chatRouter.post("/chat", async (c) => {
     }
     // ── End EL-003 execution mode ────────────────────────────────────────────
 
-    // ── S1: Streaming SSE mode ──────────────────────────────────────────────
-    // Triggered when body.stream === true (non-execute path only).
-    // Falls through to the standard single-call path when stream is absent/false.
-    if (body.stream === true) {
-      const taskId = resumedTaskId || uuid();
-      const message = body.message ?? "";
-
-      // O-007: 检测 pending 慢任务
-      let hasPendingTask = false;
-      let pendingTaskMessage: string | undefined;
-      try {
-        hasPendingTask = await DelegationArchiveRepo.hasPending(userId, sessionId);
-        if (hasPendingTask) {
-          const pendingTasks = await DelegationArchiveRepo.getPendingBySession(userId, sessionId);
-          if (pendingTasks.length > 0) {
-            pendingTaskMessage = pendingTasks[0].original_message;
-          }
-        }
-      } catch (e) {
-        console.warn("[stream] Failed to check pending delegation:", e);
-      }
-
-      // 调用 orchestrator（与普通路径一致）
-      const orchResult = await orchestrator({
-        message,
-        language: features.language as "zh" | "en",
-        user_id: userId,
-        session_id: sessionId,
-        history: body.history ?? [],
-        reqApiKey,
-        hasPendingTask,
-        pendingTaskMessage,
-      });
-
-      const orchSelectedRole: "fast" | "slow" = orchResult.delegation ? "slow" : "fast";
-      const orchSelectedModel = orchSelectedRole === "slow" ? config.slowModel : config.fastModel;
-
-      // Set SSE headers
-      c.header("Content-Type", "text/event-stream");
-      c.header("Cache-Control", "no-cache");
-      c.header("Connection", "keep-alive");
-      c.header("X-Accel-Buffering", "no");
-
-      return stream(c, async (s) => {
-        // Phase 2.0: 推断 routing layer（L0/L1/L2）
-        const routingLayer = inferRoutingLayer(orchResult);
-
-        // Step 1: 立即推送 fast_reply（安抚消息或 Fast 直接回复）
-        if (orchResult.fast_reply) {
-          await s.write(`data: ${JSON.stringify({ type: "fast_reply", stream: orchResult.fast_reply, routing_layer: routingLayer })}\n\n`);
-        }
-
-        // Phase 1.5: Clarifying 流程 → 推送澄清问题给前端
-        if (orchResult.clarifying) {
-          await s.write(`data: ${JSON.stringify({ type: "clarifying", stream: orchResult.clarifying.question_text, options: orchResult.clarifying.options, question_id: orchResult.clarifying.question_id, routing_layer: routingLayer })}\n\n`);
-        }
-
-        // Step 2: 如果有委托，启动轮询 loop 推送结果
-        if (orchResult.delegation) {
-          try {
-            for await (const event of pollArchiveAndYield(orchResult.delegation.task_id, features.language as "zh" | "en")) {
-              // Archive E2E 修复：保留所有事件字段
-              const payload = { ...event, routing_layer: event.routing_layer ?? "L2" };
-              await s.write(`data: ${JSON.stringify(payload)}\n\n`);
-            }
-          } catch (e: any) {
-            console.error("[stream] pollArchiveAndYield error:", e.message);
-            await s.write(`data: ${JSON.stringify({ type: "error", stream: "轮询出错", routing_layer: "L2" })}\n\n`);
-            // M1-SSE: pollArchiveAndYield 异常也需要 done 事件
-            const orchArchiveId = orchResult.delegation?.task_id;
-            await s.write(`data: ${JSON.stringify({ type: "done", routing_layer: "L2", archive_id: orchArchiveId, task_id: orchArchiveId })}\n\n`);
-          }
-          // Archive E2E 修复：done 事件带上 archive_id
-          const orchArchiveId = orchResult.delegation?.task_id;
-          await s.write(`data: ${JSON.stringify({ type: "done", routing_layer: "L2", archive_id: orchArchiveId, task_id: orchArchiveId })}\n\n`);
-        } else {
-          // Step 3: Fast 直接回复 → 流式输出（复用原有 streaming 逻辑）
-          const memories = config.memory.enabled
-            ? await MemoryEntryRepo.getTopForUser(userId, config.memory.maxEntriesToInject)
-            : [];
-          const retrievalResults = memories.map((m) => ({ entry: m, score: m.importance, reason: "v1" }));
-
-          let taskSummary: { goal: string; summaryText: string; nextStep: string | null } | undefined;
-          if (resumedTaskSummary) {
-            const ss = resumedTaskSummary;
-            const parts: string[] = [];
-            if (ss.completed_steps?.length) parts.push(`已完成步骤:\n${ss.completed_steps.join("\n")}`);
-            if (ss.blocked_by?.length) parts.push(`卡点: ${ss.blocked_by.join(", ")}`);
-            if (ss.confirmed_facts?.length) parts.push(`已确认事实:\n${ss.confirmed_facts.map((f: string) => `• ${f}`).join("\n")}`);
-            if (ss.summary_text) parts.push(`任务摘要: ${ss.summary_text}`);
-            taskSummary = { goal: ss.goal || "继续任务", summaryText: parts.join("\n\n") || "(无详细摘要)", nextStep: ss.next_step ?? null };
-          } else if (retrievalResults.length > 0) {
-            const { buildCategoryAwareMemoryText } = await import("../services/memory-retrieval.js");
-            taskSummary = { goal: "User memories:", summaryText: buildCategoryAwareMemoryText(retrievalResults as any).combined, nextStep: null };
-          }
-
-          const { assemblePrompt } = await import("../services/prompt-assembler.js");
-          const intentToMode: Record<string, string> = { simple_qa: "direct", chat: "direct", unknown: "direct" };
-          const mode = intentToMode[features.intent] || "research";
-          const promptAssembly = assemblePrompt({
-            mode: mode as any,
-            modelMode: orchSelectedRole,
-            intent: features.intent,
-            userMessage: message,
-            memoryText: retrievalResults.length > 0 ? buildCategoryAwareMemoryText(retrievalResults as any).combined : undefined,
-            taskSummary,
-            maxTaskSummaryTokens: config.memory.maxEntriesToInject * config.memory.maxTokensPerEntry,
-            lang: features.language as "zh" | "en",
-          });
-
-          const contextResult = await manageContext(
-            { ...body, user_id: userId, session_id: sessionId },
-            orchSelectedModel,
-            promptAssembly.systemPrompt
-          );
-
-          // 天气查询注入
-          const weatherCity = detectWeatherQuery(message);
-          if (weatherCity) {
-            const weatherData = await fetchRealTimeWeather(weatherCity);
-            if (weatherData) {
-              const weatherMsg: ChatMessage = {
-                role: "user",
-                content: `【实时天气查询】用户问的是："${message}"\n\n${formatWeatherPrompt(weatherData, message)}`,
-              };
-              const lastUserIdx = [...contextResult.final_messages].reverse().findIndex((m: ChatMessage) => m.role === "user");
-              const insertIdx = lastUserIdx >= 0 ? contextResult.final_messages.length - 1 - lastUserIdx : contextResult.final_messages.length - 1;
-              contextResult.final_messages.splice(insertIdx, 0, weatherMsg);
-            }
-          }
-
-          let fullContent = "";
-          const streamStartTime = Date.now();
-
-          try {
-            for await (const chunk of callModelStream(orchSelectedModel, contextResult.final_messages, reqApiKey)) {
-              fullContent += chunk;
-              await s.write(`data: ${JSON.stringify({ type: "chunk", stream: chunk, routing_layer: routingLayer })}\n\n`);
-            }
-          } catch (streamErr: any) {
-            console.error("[stream] Model stream error:", streamErr.message);
-            await s.write(`data: ${JSON.stringify({ type: "error", stream: streamErr.message, routing_layer: routingLayer })}\n\n`);
-            // M1-SSE: stream 失败也需要 done 事件，双路完整闭环
-            await s.write(`data: ${JSON.stringify({ type: "done", routing_layer: routingLayer })}\n\n`);
-            return;
-          }
-
-          const streamLatency = Date.now() - streamStartTime;
-          const roughTokens = Math.ceil(fullContent.length / 4);
-
-          await s.write(`data: ${JSON.stringify({
-            type: "done",
-            task_id: taskId,
-            routing_layer: routingLayer,
-            decision: {
-              intent: features.intent,
-              selected_model: orchSelectedModel,
-              selected_role: orchSelectedRole,
-              confidence: 1.0
-            }
-          })}\n\n`);
-
-          // Fire-and-forget
-          const { estimateCost } = await import("../models/token-counter.js");
-          const totalCost = estimateCost(contextResult.original_tokens, roughTokens, orchSelectedModel);
-          const { logDecision } = await import("../logging/decision-logger.js");
-          logDecision({
-            id: uuid(), user_id: userId, session_id: sessionId, timestamp: startTime,
-            input_features: features,
-            routing: { router_version: "orchestrator_v0.4", scores: { fast: 1, slow: 0 }, confidence: 1, selected_model: orchSelectedModel, selected_role: orchSelectedRole, selection_reason: "orchestrator", fallback_model: "" },
-            context: { original_tokens: contextResult.original_tokens, compressed_tokens: contextResult.compressed_tokens, compression_level: contextResult.compression_level, compression_ratio: contextResult.compression_ratio, memory_items_retrieved: retrievalResults.length, final_messages: contextResult.final_messages, compression_details: contextResult.compression_details },
-            execution: { model_used: orchSelectedModel, input_tokens: contextResult.original_tokens, output_tokens: roughTokens, total_cost_usd: totalCost, latency_ms: streamLatency, did_fallback: false, response_text: fullContent },
-          }).catch((e) => console.error("[stream] logDecision failed:", e));
-
-          learnFromInteraction({
-            id: uuid(), user_id: userId, session_id: sessionId, timestamp: startTime,
-            input_features: features,
-            routing: { router_version: "orchestrator_v0.4", scores: { fast: 1, slow: 0 }, confidence: 1, selected_model: orchSelectedModel, selected_role: orchSelectedRole, selection_reason: "orchestrator", fallback_model: "" },
-            context: { original_tokens: contextResult.original_tokens, compressed_tokens: 0, compression_level: "L0", compression_ratio: 1, memory_items_retrieved: 0, final_messages: [], compression_details: [] },
-            execution: { model_used: orchSelectedModel, input_tokens: contextResult.original_tokens, output_tokens: roughTokens, total_cost_usd: totalCost, latency_ms: streamLatency, did_fallback: false, response_text: fullContent },
-          } as any, message, undefined, userId).catch((e) => console.error("[stream] learnFromInteraction failed:", e));
-
-          TaskRepo.updateExecution(taskId, contextResult.original_tokens + roughTokens).catch((e) => console.error("[stream] updateExecution failed:", e));
-
-          // Product polish: SSE done 事件（对齐 Phase 3.0：无 stream 字段）
-          await s.write(`data: ${JSON.stringify({ type: "done", routing_layer: routingLayer })}\n\n`);
-        }
-      });
-    }
-    // ── End S1 streaming mode ─────────────────────────────────────────────
+    // 流式请求（非 execute）默认走 LLM-Native SSE 分支，已在 try 块顶部处理。
+    // 旧 streaming 路径（依赖 orchestrator）已废弃删除。
+    // 此处保留单次调用路径作为 legacy API fallback（body.execute && !body.use_llm_native_routing）
 
     // 创建任务记录（用 intent 作为 mode 推断：simple_qa/chat → direct，其他 → research）
     // T1: if we resumed an existing task, reuse its taskId instead of creating a new one
@@ -975,47 +654,7 @@ chatRouter.post("/chat", async (c) => {
   }
 });
 
-// O-001: 轮询接口 — 查询后台委托任务的最终结果
-chatRouter.get("/chat-result/:taskId", async (c) => {
-  const taskId = c.req.param("taskId");
-  if (!taskId) {
-    return c.json({ error: "taskId is required" }, 400);
-  }
-
-  const result = await getDelegationResult(taskId);
-
-  if (!result) {
-    return c.json({ error: "Task not found" }, 404);
-  }
-
-  // 如果慢模型已完成，返回完整结果
-  if (result.status === "completed" && result.slow_result) {
-    return c.json({
-      task_id: taskId,
-      status: "completed",
-      fast_reply: result.fast_reply,
-      slow_result: result.slow_result,
-      // 告诉前端：可以用 slow_result 替换 fast_reply，或追加显示
-      action: "replace",
-    });
-  }
-
-  if (result.status === "failed") {
-    return c.json({
-      task_id: taskId,
-      status: "failed",
-      error: result.error,
-      fast_reply: result.fast_reply,
-    });
-  }
-
-  // 还在处理中
-  return c.json({
-    task_id: taskId,
-    status: "pending",
-    fast_reply: result.fast_reply,
-  });
-});
+// 旧 /chat-result 端点已废弃（委托结果通过 LLM-Native SSE 实时推送，无需轮询）
 
 chatRouter.post("/feedback", async (c) => {
   let decision_id: string;
@@ -1133,38 +772,5 @@ chatRouter.post("/feedback", async (c) => {
   return c.json({ success: true });
 });
 
-// ── Routing Evaluation（供 Benchmark 使用）──────────────────────────────────────
-
-interface EvalRequest {
-  message: string;
-  language?: "zh" | "en";
-}
-
-chatRouter.post("/eval/routing", async (c) => {
-  let body: EvalRequest;
-  try {
-    body = await c.req.json();
-  } catch {
-    return c.json({ error: "Invalid JSON body" }, 400);
-  }
-
-  if (!body.message?.trim()) {
-    return c.json({ error: "message is required" }, 400);
-  }
-
-  const lang = body.language ?? "zh";
-  const startTime = Date.now();
-  const result = await evaluateRouting(body.message, lang);
-
-  return c.json({
-    routing_intent: result.routing_intent,
-    selected_role: result.selected_role,
-    tool_used: result.tool_used ?? null,
-    fast_reply: result.fast_reply,
-    confidence: result.confidence,
-    routing_layer: result.routing_layer,
-    latency_ms: Date.now() - startTime,
-  });
-});
 
 export { chatRouter };
