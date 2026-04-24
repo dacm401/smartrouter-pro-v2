@@ -87,6 +87,9 @@ export const config = {
     model: process.env.EMBEDDING_MODEL ?? "text-embedding-3-small",
     dimensions: parseInt(process.env.EMBEDDING_DIMENSIONS ?? "1536"),
     enabled: !!(process.env.EMBEDDING_API_KEY ?? process.env.OPENAI_API_KEY),
+    // SiliconFlow 专用（将来可迁移至统一 baseUrl 配置）
+    siliconflowApiKey: process.env.SILICONFLOW_API_KEY ?? "",
+    siliconflowBaseUrl: process.env.SILICONFLOW_BASE_URL ?? "https://api.siliconflow.cn",
   },
 
   // EL-004: External tool guardrail

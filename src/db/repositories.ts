@@ -887,7 +887,10 @@ export const DelegationArchiveRepo = {
         status === "completed" ? new Date() : null,
       ]
     );
-    return mapDelegationArchiveRow(result.rows[0]);
+    const entry = mapDelegationArchiveRow(result.rows[0]);
+    // Phase 5: side-channel write to IArchiveStorage (non-blocking)
+    phase5SideChannelWrite(entry).catch(() => {});
+    return entry;
   },
 
   /**
@@ -905,6 +908,11 @@ export const DelegationArchiveRepo = {
        WHERE task_id=$3`,
       [data.slow_result, data.processing_ms, data.task_id]
     );
+    // Phase 5: side-channel update to IArchiveStorage (non-blocking)
+    const entry = await DelegationArchiveRepo.getById(data.task_id);
+    if (entry) {
+      phase5SideChannelUpdate(entry.id, data.slow_result, data.processing_ms, "completed").catch(() => {});
+    }
   },
 
   /**
@@ -915,6 +923,11 @@ export const DelegationArchiveRepo = {
       `UPDATE delegation_archive SET status='failed', completed_at=NOW() WHERE task_id=$1`,
       [task_id]
     );
+    // Phase 5: side-channel update (non-blocking)
+    const entry = await DelegationArchiveRepo.getById(task_id);
+    if (entry) {
+      phase5SideChannelUpdate(entry.id, error, 0, "failed").catch(() => {});
+    }
   },
 
   /**
@@ -1001,8 +1014,80 @@ function mapDelegationArchiveRow(r: any): DelegationArchiveEntry {
   };
 }
 
-// ── Task Archive (LLM-Native Routing) ────────────────────────────────────────
-// Fast/Slow 共享工作台：Fast 写入命令，Slow 执行中查/写结果
+// ── Phase 5: Archive Storage Side-Channel ─────────────────────────────────────
+// DelegationArchiveRepo 写入 DB 主表，同时可选写入 IArchiveStorage（side-channel）。
+// 用途：数据主权（本地文件系统）/ S3 备份 / 快速人工审查（JSON 可读）。
+// 当 STORAGE_BACKEND=local|s3|pg（非 pg-table）且 USE_PHASE5_ARCHIVE=true 时激活。
+// Phase 5 storage is lazy-loaded to avoid circular deps.
+
+let _phase5Storage: import("../services/phase5/storage-backend.js").IArchiveStorage | null = null;
+let _phase5StorageAttempted = false;
+
+async function getPhase5Storage() {
+  if (_phase5Storage || _phase5StorageAttempted) return _phase5Storage;
+  _phase5StorageAttempted = true;
+  // Only activate when explicitly configured (not default pg-table flow)
+  if (process.env.USE_PHASE5_ARCHIVE !== "true") return null;
+  try {
+    const { getIArchiveStorage } = await import("../services/phase5/storage-registry.js");
+    _phase5Storage = await getIArchiveStorage();
+  } catch (e) {
+    console.warn("[DelegationArchiveRepo] Phase 5 storage unavailable:", (e as Error).message);
+  }
+  return _phase5Storage;
+}
+
+/**
+ * 将 DelegationArchiveEntry 转换为 ArchiveDocument 格式，
+ * 用于 Phase 5 side-channel 写入（IArchiveStorage）。
+ */
+function toArchiveDocument(entry: DelegationArchiveEntry): import("../services/phase5/storage-backend.js").ArchiveDocument {
+  return {
+    id: entry.id,
+    task_id: entry.task_id,
+    session_id: entry.session_id,
+    user_id: entry.user_id,
+    manager_decision: { delegation_prompt: entry.delegation_prompt },
+    user_input: entry.original_message,
+    state: entry.status === "completed" ? "completed" : entry.status === "failed" ? "failed" : "delegated",
+    status: entry.status,
+    constraints: { related_task_ids: entry.related_task_ids ?? [] },
+    fast_observations: [],
+    slow_execution: entry.slow_result ? { result: entry.slow_result, processing_ms: entry.processing_ms } : {},
+    created_at: entry.created_at,
+    updated_at: entry.completed_at ?? entry.created_at,
+  };
+}
+
+/**
+ * Phase 5 side-channel 写入（非阻塞，失败不影响主 DB 流程）。
+ */
+async function phase5SideChannelWrite(entry: DelegationArchiveEntry): Promise<void> {
+  const storage = await getPhase5Storage();
+  if (!storage) return;
+  try {
+    const doc = toArchiveDocument(entry);
+    await storage.save(doc);
+    console.log(`[Phase5] Archive side-channel write: ${entry.id} → ${process.env.STORAGE_BACKEND}`);
+  } catch (e) {
+    console.warn(`[Phase5] Side-channel write failed for ${entry.id}:`, (e as Error).message);
+  }
+}
+
+async function phase5SideChannelUpdate(id: string, slow_result: string, processing_ms: number, status: string): Promise<void> {
+  const storage = await getPhase5Storage();
+  if (!storage) return;
+  try {
+    await storage.update(id, {
+      slow_execution: { result: slow_result, processing_ms },
+      status,
+      state: status === "completed" ? "completed" : status === "failed" ? "failed" : "delegated",
+      updated_at: new Date().toISOString(),
+    });
+  } catch (e) {
+    console.warn(`[Phase5] Side-channel update failed for ${id}:`, (e as Error).message);
+  }
+}
 
 export interface TaskArchiveEntry {
   id: string;

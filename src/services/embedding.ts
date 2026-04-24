@@ -22,6 +22,9 @@ export interface EmbeddingConfig {
   model: string;
   dimensions: number;
   enabled: boolean;
+  // SiliconFlow 专用配置
+  siliconflowApiKey: string;
+  siliconflowBaseUrl: string;
 }
 
 /**
@@ -82,10 +85,14 @@ async function getSiliconFlowEmbedding(
   text: string,
   cfg: EmbeddingConfig
 ): Promise<number[] | null> {
-  const res = await fetch("https://api.siliconflow.cn/v1/embeddings", {
+  // 优先用专用 siliconflowApiKey，否则降级到 apiKey
+  const apiKey = cfg.siliconflowApiKey || cfg.apiKey;
+  const baseUrl = cfg.siliconflowBaseUrl || "https://api.siliconflow.cn";
+  const url = `${baseUrl}/v1/embeddings`;
+  const res = await fetch(url, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${cfg.apiKey}`,
+      Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
