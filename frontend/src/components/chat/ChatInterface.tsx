@@ -5,6 +5,15 @@ import { MessageBubble } from "./MessageBubble";
 import { ModelSwitchAnim } from "./ModelSwitchAnim";
 import { getApiConfig } from "@/lib/api";
 
+/** Phase 3.0: SSE 委托生命周期状态项 */
+export interface DelegationStatusItem {
+  id: string;
+  type: "manager_decision" | "clarifying_needed" | "archive_written" | "worker_started" | "command_issued" | "worker_completed" | "manager_synthesized";
+  label: string;
+  detail?: string;
+  timestamp: string;
+}
+
 interface Message {
   id: string;
   role: "user" | "assistant";
@@ -49,6 +58,9 @@ export function ChatInterface({ onTaskIdChange, userId: propUserId, sessionId: p
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // Phase 3.0: SSE 委托生命周期状态追踪
+  const [delegationStatus, setDelegationStatus] = useState<DelegationStatusItem[]>([]);
+
   // Use external sessionId if provided, otherwise generate once
   const [sessionId, setSessionIdInternal] = useState<string>(() => propSessionId ?? uuid());
 
@@ -67,7 +79,19 @@ export function ChatInterface({ onTaskIdChange, userId: propUserId, sessionId: p
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, loading]);
+  }, [messages, loading, delegationStatus]);
+
+  /** Phase 3.0: 添加 SSE 委托状态项（去重，防止重复事件） */
+  const addDelegationStatus = (
+    type: DelegationStatusItem["type"],
+    label: string,
+    detail?: string
+  ) => {
+    setDelegationStatus((prev) => {
+      // 去重：同 type 只保留最新一条
+      return [...prev.filter((i) => i.type !== type), { id: uuid(), type, label, detail, timestamp: new Date().toISOString() }];
+    });
+  };
 
   const sendStreaming = async (text: string, history: any[]): Promise<boolean> => {
     const { apiBase, apiKey, fastModel, slowModel } = getApiConfig();
@@ -168,6 +192,7 @@ export function ChatInterface({ onTaskIdChange, userId: propUserId, sessionId: p
             ]);
           } else if (data.type === "done") {
             setStatusMsg(null);
+            setDelegationStatus([]); // Phase 3.0: 委托流程结束，清理状态
             if (data.task_id) onTaskIdChange?.(data.task_id);
             setMessages((prev) =>
               prev.map((m) =>
@@ -185,6 +210,33 @@ export function ChatInterface({ onTaskIdChange, userId: propUserId, sessionId: p
                   : m
               )
             );
+          // ── Phase 3.0 SSE 委托生命周期事件 ───────────────────────────────────
+          } else if (data.type === "manager_decision") {
+            // LLM-Native: Manager 做出路由决策，显示决策信息
+            addDelegationStatus("manager_decision", `🔄 路由决策 [${data.routing_layer ?? "?"}]: ${data.decision_type ?? data.message ?? ""}`, data.message);
+          } else if (data.type === "clarifying_needed") {
+            // 请求澄清 → 同时触发 clarifyQuestion 弹窗
+            setClarifyQuestion({
+              question_id: data.question_id ?? uuid(),
+              question_text: data.question_text ?? data.stream ?? "",
+              options: data.options,
+            });
+            addDelegationStatus("clarifying_needed", `❓ 请求澄清: ${data.question_text ?? data.stream ?? ""}`);
+          } else if (data.type === "archive_written") {
+            // 委托存档已写入
+            addDelegationStatus("archive_written", `📋 委托存档已写入 [${data.decision_type ?? ""}]`, `archive_id: ${data.archive_id ?? ""}`);
+          } else if (data.type === "worker_started") {
+            // Worker 开始执行
+            addDelegationStatus("worker_started", `🚀 Worker 已启动 [${data.worker_role ?? "?"}]`, `task_id: ${data.task_id ?? ""}`);
+          } else if (data.type === "command_issued") {
+            // 命令已下发
+            addDelegationStatus("command_issued", `📨 命令已下发 [${data.routing_layer ?? "?"}]`, `task_id: ${data.task_id ?? ""}`);
+          } else if (data.type === "worker_completed") {
+            // Worker 执行完成，显示摘要
+            addDelegationStatus("worker_completed", `✅ Worker 执行完成 [${data.worker_type ?? "?"}]`, data.summary);
+          } else if (data.type === "manager_synthesized") {
+            // Manager 合成最终输出
+            addDelegationStatus("manager_synthesized", `🧠 Manager 合成完成 [置信度 ${data.confidence != null ? Math.round(data.confidence * 100) : "?"}%]`, `长度: ${data.final_content?.length ?? 0} chars`);
           }
         }
       }
@@ -381,6 +433,7 @@ export function ChatInterface({ onTaskIdChange, userId: propUserId, sessionId: p
     setLoading(true);
     setClarifyQuestion(null);
     setStatusMsg(null);
+    setDelegationStatus([]); // Phase 3.0: 清空旧委托状态
     const history = messages.map((m) => ({ role: m.role, content: m.content, decision_id: m.decision?.id }));
     sendStreaming(text, history).then((ok) => {
       if (!ok) {
@@ -467,6 +520,34 @@ export function ChatInterface({ onTaskIdChange, userId: propUserId, sessionId: p
             >
               💡 首次使用请点击右上角「Settings」配置 API 地址
             </div>
+          </div>
+        )}
+
+        {/* Phase 3.0: SSE 委托生命周期状态指示器 */}
+        {delegationStatus.length > 0 && (
+          <div className="mb-3 flex flex-col gap-1.5 animate-fade-in-up">
+            <div className="text-xs font-medium mb-1" style={{ color: "var(--text-muted)" }}>
+              ⚙️ 委托进度
+            </div>
+            {delegationStatus.map((item) => (
+              <div key={item.id} className="flex items-start gap-2 px-3 py-2 rounded-lg text-xs"
+                style={{ backgroundColor: "var(--bg-elevated)", border: "1px solid var(--border-default)" }}>
+                <span className="flex-shrink-0 mt-0.5">{item.label.split(" ")[0]}</span>
+                <div className="flex-1 min-w-0">
+                  <div style={{ color: "var(--text-primary)" }} className="truncate">
+                    {item.label.replace(/^[^\s]+\s/, "")}
+                  </div>
+                  {item.detail && (
+                    <div className="truncate mt-0.5" style={{ color: "var(--text-muted)" }}>
+                      {item.detail}
+                    </div>
+                  )}
+                </div>
+                <span className="flex-shrink-0 text-[10px]" style={{ color: "var(--text-muted)" }}>
+                  {new Date(item.timestamp).toLocaleTimeString("zh-CN", { hour12: false })}
+                </span>
+              </div>
+            ))}
           </div>
         )}
 
