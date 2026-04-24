@@ -1107,7 +1107,13 @@ export type SSEEventTypePhase3 =
   | "worker_started"     // Phase 3.0: Worker 开始执行
   | "worker_progress"    // Phase 3.0: Worker 执行中（进度报告）
   | "worker_completed"   // Phase 3.0: Worker 执行完成
-  | "manager_synthesized"; // Phase 3.0: Manager 合成最终输出
+  | "manager_synthesized" // Phase 3.0: Manager 合成最终输出
+  | "done"               // SSE 流结束信号（所有路径统一发送）
+  | "result"             // 文本结果（慢模型直出）
+  | "error"              // 错误事件
+  | "status"             // 状态消息（安抚/进度）
+  | "chunk"              // 流式文本块
+  | "fast_reply";        // Fast 模型直接回复
 
 export interface SSEManagerDecisionEvent {
   type: "manager_decision";
@@ -1160,6 +1166,46 @@ export interface SSEManagerSynthesizedEvent {
   confidence: number;
   routing_layer: string;
   timestamp: string;
+}
+
+/** SSE done 事件 — 统一流结束信号（Fast直答 / Delegation成功 / Delegation失败 / 超时均发送） */
+export interface SSEDoneEvent {
+  type: "done";
+  /** 可选的状态文本（如 "分析完成" / "已返回答案"） */
+  stream?: string;
+  routing_layer?: RoutingLayer;
+  archive_id?: string;
+  task_id?: string;
+}
+
+/** SSE result 事件 — 慢模型文本结果 */
+export interface SSEResultEvent {
+  type: "result";
+  stream: string;
+  routing_layer?: RoutingLayer;
+}
+
+/** SSE error 事件 — 错误通知 */
+export interface SSEErrorEvent {
+  type: "error";
+  stream?: string;
+  routing_layer?: RoutingLayer;
+}
+
+/** SSE status 事件 — 安抚/进度消息 */
+export interface SSEStatusEvent {
+  type: "status";
+  stream: string;
+  routing_layer?: RoutingLayer;
+}
+
+/** SSE clarifying 事件（补全字段） */
+export interface SSEClarifyingEvent {
+  type: "clarifying_needed";
+  routing_layer: RoutingLayer;
+  question_text?: string;
+  options?: string[];
+  question_id?: string;
 }
 
 // ── Task Archive Repository Types ─────────────────────────────────────────────

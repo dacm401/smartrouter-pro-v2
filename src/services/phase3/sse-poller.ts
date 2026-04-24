@@ -273,7 +273,12 @@ export async function* pollArchiveAndYield(
           routing_layer: "L2",
         };
 
-        await TaskArchiveRepo.markDelivered(taskId).catch(() => {});
+        // SSE1: 成功路径也发送 done 事件（与 failed/timeout 路径一致）
+        yield { type: "done", stream: lang === "zh" ? "分析完成" : "Analysis complete", routing_layer: "L2" };
+
+        await TaskArchiveRepo.markDelivered(taskId).catch((e) =>
+          console.warn("[pollArchiveAndYield] markDelivered failed:", e?.message)
+        );
       }
       break;
     }
@@ -291,8 +296,10 @@ export async function* pollArchiveAndYield(
       const exec = task.slow_execution as Record<string, unknown> | null;
       const errors = (Array.isArray(exec?.errors) ? exec.errors : []) as string[];
       yield { type: "error", stream: `任务执行失败: ${errors[0] ?? "Unknown error"}`, routing_layer: "L2" };
-      yield { type: "done", routing_layer: "L2" };
-      await TaskArchiveRepo.markDelivered(taskId).catch(() => {});
+      yield { type: "done", stream: lang === "zh" ? "执行失败" : "Execution failed", routing_layer: "L2" };
+      await TaskArchiveRepo.markDelivered(taskId).catch((e) =>
+        console.warn("[pollArchiveAndYield] markDelivered failed:", e?.message)
+      );
       break;
     }
 
@@ -311,8 +318,10 @@ export async function* pollArchiveAndYield(
           : "⏱ Task execution timed out (180s), please retry or simplify your request",
         routing_layer: "L2",
       };
-      yield { type: "done", routing_layer: "L2" };
-      await TaskArchiveRepo.markDelivered(taskId).catch(() => {});
+      yield { type: "done", stream: lang === "zh" ? "任务超时" : "Task timed out", routing_layer: "L2" };
+      await TaskArchiveRepo.markDelivered(taskId).catch((e) =>
+        console.warn("[pollArchiveAndYield] markDelivered failed:", e?.message)
+      );
       break;
     }
 

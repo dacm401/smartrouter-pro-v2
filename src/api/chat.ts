@@ -220,18 +220,21 @@ chatRouter.post("/chat", async (c) => {
               }
             }
 
-            // done: 带上 archive_id（前端去 /v1/archive/tasks/:id 拉完整结果）和 routing_layer
+            // done: SSE1 双路统一 done 事件（Fast 直答 / delegation 均发送）
             await s.write(`data: ${JSON.stringify({
               type: "done",
+              stream: llmNativeResult.delegation
+                ? (lang === "zh" ? "分析完成" : "Analysis complete")
+                : (lang === "zh" ? "已返回答案" : "Answer ready"),
               routing_layer: llmNativeResult.routing_layer,
               archive_id: llmNativeResult.archive_id,
               task_id: taskId,
             })}\n\n`);
           } catch (e: any) {
-            console.error("[stream-llm] SSE error:", e.message);
+            console.warn("[stream-llm] SSE error:", e.message);
             await s.write(`data: ${JSON.stringify({ type: "error", stream: e.message })}\n\n`);
-            // M1-SSE: SSE 失败也需要 done 事件，双路完整闭环
-            await s.write(`data: ${JSON.stringify({ type: "done" })}\n\n`);
+            // SSE1: SSE 失败也需要 done 事件，双路完整闭环
+            await s.write(`data: ${JSON.stringify({ type: "done", stream: lang === "zh" ? "发生错误" : "Error occurred" })}\n\n`);
           }
         });
       }
@@ -294,7 +297,7 @@ chatRouter.post("/chat", async (c) => {
             did_fallback: false,
             response_text: llmNativeResult.message ?? "",
           },
-        }).catch((e) => console.error("Failed to log llm-native decision:", e));
+        }).catch((e) => console.warn("[chat] Failed to log llm-native decision:", e));
 
         const response: ChatResponse = {
           message: llmNativeResult.message ?? "",
@@ -368,7 +371,7 @@ chatRouter.post("/chat", async (c) => {
           risk: "low",
           goal: title,
           status: "responding",
-        }).catch((e) => console.error("Failed to create execute task:", e));
+        }).catch((e) => console.warn("[chat] Failed to create execute task:", e));
       }
 
       // Memory retrieval for planner context (same pipeline as non-execute path)
@@ -434,13 +437,13 @@ chatRouter.post("/chat", async (c) => {
           completed_steps: loopResult.completedSteps,
           tool_calls_executed: loopResult.toolCallsExecuted,
         },
-      }).catch((e) => console.error("Failed to write planning trace:", e));
+      }).catch((e) => console.warn("[chat] Failed to write planning trace:", e));
 
       // Update task execution stats (use loop message count as proxy for tokens)
       await TaskRepo.updateExecution(
         taskId,
         loopResult.messages.length * 200, // rough token estimate for now
-      ).catch((e) => console.error("Failed to update task:", e));
+      ).catch((e) => console.warn("[chat] Failed to update task:", e));
 
       // ER-003: Persist execution result (fire-and-forget; don't block the response)
       // Only persist completed or gracefully-stopped runs; skip hard errors.
@@ -471,7 +474,7 @@ chatRouter.post("/chat", async (c) => {
           tool_count: loopResult.toolCallsExecuted,
           duration_ms: Date.now() - executionStart,
           reason: loopResult.reason,
-        }).catch((e) => console.error("Failed to persist execution result:", e));
+        }).catch((e) => console.warn("[chat] Failed to persist execution result:", e));
       }
 
       return c.json({ message: loopResult.finalContent, task_id: taskId });
@@ -501,7 +504,7 @@ chatRouter.post("/chat", async (c) => {
       complexity,
       risk: "low",
       goal: title,
-    }).catch((e) => console.error("Failed to create task:", e));
+    }).catch((e) => console.warn("[chat] Failed to create task:", e));
 
     // 组装 prompt（Memory Injection MC-003 + MR-001 Retrieval Policy）
     const memories = config.memory.enabled
@@ -612,7 +615,7 @@ chatRouter.post("/chat", async (c) => {
       },
     };
 
-    logDecision(decision).catch((e) => console.error("Failed to log decision:", e));
+    logDecision(decision).catch((e) => console.warn("[chat] Failed to log decision:", e));
 
     // P4: derive previousDecisionId from the last assistant message in history
     const previousDecisionId: string | undefined = (() => {
@@ -624,23 +627,23 @@ chatRouter.post("/chat", async (c) => {
     })();
 
     // P4: userId is available in scope; pass to learnFromInteraction for feedback_events writes
-    learnFromInteraction(decision, message, previousDecisionId, userId).catch((e) => console.error("Learning failed:", e));
+    learnFromInteraction(decision, message, previousDecisionId, userId).catch((e) => console.warn("[chat] Learning failed:", e));
     // 更新任务执行统计
-    TaskRepo.updateExecution(taskId, modelResponse.input_tokens + modelResponse.output_tokens).catch((e) => console.error("Failed to update task:", e));
+    TaskRepo.updateExecution(taskId, modelResponse.input_tokens + modelResponse.output_tokens).catch((e) => console.warn("[chat] Failed to update task:", e));
 
     // 写 trace：classification + response
     TaskRepo.createTrace({
       id: uuid(), task_id: taskId, type: "classification",
       detail: { intent: features.intent, complexity_score: features.complexity_score, mode },
-    }).catch((e) => console.error("Failed to write classification trace:", e));
+    }).catch((e) => console.warn("[chat] Failed to write classification trace:", e));
     TaskRepo.createTrace({
       id: uuid(), task_id: taskId, type: "routing",
       detail: { selected_model: routing.selected_model, selected_role: routing.selected_role, confidence: routing.confidence, did_fallback: didFallback },
-    }).catch((e) => console.error("Failed to write routing trace:", e));
+    }).catch((e) => console.warn("[chat] Failed to write routing trace:", e));
     TaskRepo.createTrace({
       id: uuid(), task_id: taskId, type: "response",
       detail: { input_tokens: modelResponse.input_tokens, output_tokens: modelResponse.output_tokens, latency_ms: latencyMs, total_cost_usd: totalCost },
-    }).catch((e) => console.error("Failed to write response trace:", e));
+    }).catch((e) => console.warn("[chat] Failed to write response trace:", e));
 
     const response: ChatResponse = {
       message: modelResponse.content,
@@ -703,9 +706,7 @@ chatRouter.post("/feedback", async (c) => {
     // M2: Boost recent auto_learn entries (fire-and-forget)
     if (user_id) {
       const { MemoryEntryRepo } = await import("../db/repositories.js");
-      MemoryEntryRepo.boostRecentAutoLearn(user_id, 300_000).catch(() => {
-        // ignore errors, non-blocking
-      });
+      MemoryEntryRepo.boostRecentAutoLearn(user_id, 300_000).catch((e) => console.warn("[feedback] boostRecentAutoLearn failed:", e));
     }
     const { autoLearnFromDecision } = await import("../services/memory-store.js");
     const { query: q2 } = await import("../db/connection.js");
@@ -766,7 +767,7 @@ chatRouter.post("/feedback", async (c) => {
         };
         await autoLearnFromDecision(user_id!, minDecision);
       })
-      .catch((e) => console.error("[feedback] autoLearnFromDecision failed:", e));
+      .catch((e) => console.warn("[feedback] autoLearnFromDecision failed:", e));
   }
 
   return c.json({ success: true });

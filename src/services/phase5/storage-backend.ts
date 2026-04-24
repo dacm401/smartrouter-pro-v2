@@ -116,11 +116,13 @@ export type StorageBackendType = "local" | "s3" | "pg";
  * 用法：
  *   const store = await createArchiveStore();
  *   const id = await store.save(doc);
+ *
+ * @param type 可选：强制指定后端类型（用于测试）。不传则读 STORAGE_BACKEND 环境变量。
  */
-export async function createArchiveStore(): Promise<IArchiveStorage> {
-  const type = (process.env.STORAGE_BACKEND ?? "local") as StorageBackendType;
+export async function createArchiveStore(type?: StorageBackendType): Promise<IArchiveStorage> {
+  const backend = type ?? (process.env.STORAGE_BACKEND ?? "local") as StorageBackendType;
 
-  switch (type) {
+  switch (backend) {
     case "s3": {
       const { S3ArchiveStorage } = await import("./s3-archive-storage.js");
       return new S3ArchiveStorage({

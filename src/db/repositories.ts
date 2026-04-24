@@ -889,7 +889,9 @@ export const DelegationArchiveRepo = {
     );
     const entry = mapDelegationArchiveRow(result.rows[0]);
     // Phase 5: side-channel write to IArchiveStorage (non-blocking)
-    phase5SideChannelWrite(entry).catch(() => {});
+    phase5SideChannelWrite(entry).catch((e) =>
+      console.warn("[DelegationArchiveRepo.save] phase5 side-channel write failed:", e?.message)
+    );
     return entry;
   },
 
@@ -911,7 +913,9 @@ export const DelegationArchiveRepo = {
     // Phase 5: side-channel update to IArchiveStorage (non-blocking)
     const entry = await DelegationArchiveRepo.getById(data.task_id);
     if (entry) {
-      phase5SideChannelUpdate(entry.id, data.slow_result, data.processing_ms, "completed").catch(() => {});
+      phase5SideChannelUpdate(entry.id, data.slow_result, data.processing_ms, "completed").catch((e) =>
+        console.warn("[DelegationArchiveRepo.complete] phase5 side-channel update failed:", e?.message)
+      );
     }
   },
 
@@ -926,7 +930,9 @@ export const DelegationArchiveRepo = {
     // Phase 5: side-channel update (non-blocking)
     const entry = await DelegationArchiveRepo.getById(task_id);
     if (entry) {
-      phase5SideChannelUpdate(entry.id, error, 0, "failed").catch(() => {});
+      phase5SideChannelUpdate(entry.id, error, 0, "failed").catch((e) =>
+        console.warn("[DelegationArchiveRepo.fail] phase5 side-channel update failed:", e?.message)
+      );
     }
   },
 
