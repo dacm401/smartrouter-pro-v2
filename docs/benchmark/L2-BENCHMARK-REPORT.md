@@ -1,14 +1,14 @@
-# L2 Benchmark Report — Sprint 57/58
+# L2 Benchmark Report — Sprint 57/58/60
 
 **日期**: 2026-04-25
-**执行人**: Sprint 58
+**执行人**: Sprint 57 (7B) → Sprint 58 (72B Run1) → Sprint 60 (72B Run2)
 **目标**: 建立 LLM 路由在 Layer 2（复杂推理/多步任务）场景的真实基线，与离线规则 63.3% 对比
 
 ---
 
 ## 结论（一句话）
 
-> **Qwen2.5-72B-Instruct 路由准确率 80.0%，比离线规则高 +16.7pp，提升 26%。LLM 路由方案在 L2 场景下明确优于规则。**
+> **Qwen2.5-72B-Instruct 72B 路由准确率 80.0%~83.3%（两次运行），比离线规则高 +16.7pp~+20.0pp，提升 26%~32%。LLM 路由方案在 L2 场景下明确优于规则。**
 
 ---
 
@@ -17,10 +17,10 @@
 | Provider | Model | Mode准确率 | vs 规则基线 | 平均延迟 |
 |----------|-------|-----------|------------|---------|
 | SiliconFlow | Qwen2.5-7B-Instruct | 40.0% (12/30) | -23.3pp | ~800ms |
-| **SiliconFlow** | **Qwen2.5-72B-Instruct** | **80.0% (24/30)** | **+16.7pp** | **~7898ms** |
+| **SiliconFlow** | **Qwen2.5-72B-Instruct** | **80.0~83.3%** (24~25/30) | **+16.7~+20pp** | **~8.7s** |
 | — | 离线规则基线 | 63.3% (19/30) | — | 0ms |
 
-**注**: 7B 数字偏低部分因为 prompt 含可选 JSON 字段导致模型输出乱码（Sprint 57 诊断修复后 72B 无此问题）。即使 7B 可用，72B 也大幅领先。
+**注**: 72B 两次运行有波动（80.0% / 83.3%），建议取 3 次均值作为最终数字。7B 数字偏低部分因为 prompt 含可选 JSON 字段导致模型输出乱码（Sprint 57 诊断修复后 72B 无此问题）。
 
 ---
 
@@ -90,14 +90,33 @@
 
 ---
 
+## 72B 多次运行波动记录
+
+> **重要发现**: 72B 在相同用例集上两次运行结果存在显著波动，说明 LLM 推理有非确定性，基准测试需多次运行取均值。
+
+| 运行 | 日期 | 总体准确率 | tool-chain | deep-summary | multi-hop | cross-session | edge |
+|------|------|-----------|-----------|-------------|-----------|--------------|------|
+| Sprint 58 Run 1 | 2026-04-25 | **80.0%** (24/30) | 100.0% | 83.3% | 37.5% | 50.0% | 75.0% |
+| Sprint 60 Run 2 | 2026-04-25 | **83.3%** (25/30) | 100.0% | 100.0% | 87.5% | 25.0% | 75.0% |
+
+**观察**:
+- tool-chain / edge 稳定（均为 100%/75%），说明这类模式 LLM 能稳定识别
+- multi-hop 波动大（37.5% → 87.5%），推理型任务受模型采样影响显著
+- cross-session 波动大（50% → 25%），这个场景本身就是 LLM 弱点
+- G2 `delegate_to_slow +0.30` 校准是在 **LLM 输出之后**做规则修正，不改变 LLM 本身的输出分布
+
+**建议**: 后续 benchmark 取 3 次运行的均值作为最终数字，减少单次波动的影响。
+
+---
+
 ## 下一步
 
-1. **Sprint 59**: 将 Layer 2 路由切换为在线 72B 模型（更新 routing-strategy.ts / llm-native-router.ts）
-2. **Cross-session 兜底**: prompt 增加"续写/继续"显式识别，与规则形成 AND 组合
+1. **Sprint 59** ✅: Layer 2 路由切换 72B + G1 冗余逻辑已清理
+2. **Cross-session prompt 优化**: prompt 增加"续写/继续"显式识别（需在 LLM 层而非 G2 层处理）
 3. **L1 benchmark**: 建 L1（简单 Q&A）benchmark，验证 Fast 模型是否过度代理到 slow
 4. **延迟优化**: 72B 平均 ~8s，首次冷启动可能 >15s，考虑预热或缓存
 
 ---
 
-*报告生成: benchmark-routing.cjs Sprint 58 运行结果*
+*报告生成: benchmark-routing.cjs Sprint 58 Run 1 + Sprint 60 Run 2 运行结果*
 *结果文件: results/layer2-benchmark-siliconflow-2026-04-25.json*
