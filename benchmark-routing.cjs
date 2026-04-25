@@ -1,5 +1,5 @@
 /**
- * Sprint 57: L2 在线 Benchmark — LLM 路由 vs 离线规则
+ * Sprint 58: L2 在线 Benchmark — LLM 路由 vs 离线规则
  *
  * 加载 30 条 L2 测试用例，直接调用 Fast 模型（Manager）做路由判决，
  * 与离线规则基线对比，建立 LLM 路由在 L2 场景的真实基线。
@@ -379,7 +379,7 @@ function summarize(results, label) {
 
 // ── 主函数 ───────────────────────────────────────────────────────────────────
 async function main() {
-  console.log(`\n=== Sprint 57: L2 在线 Benchmark ===`);
+  console.log(`\n=== Sprint 58: L2 在线 Benchmark ===`);
   console.log(`  Provider: ${provider}`);
   console.log(`  Cases:    ${CASES.length}`);
   console.log(`  Model:    ${provider === "siliconflow" ? (process.env.FAST_MODEL || "Qwen/Qwen2.5-7B-Instruct") : provider === "ollama" ? (process.env.OLLAMA_MODEL || "qwen2.5:7b") : "offline_rule"}\n`);
