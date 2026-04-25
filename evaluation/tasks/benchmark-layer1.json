@@ -1,0 +1,122 @@
+[
+  {
+    "id": "L1-001", "scenario": "simple-faq", "intent": "fact_lookup",
+    "input": "香港回归是哪一年？", "expected_mode": "fast", "expected_intent": "fact_lookup"
+  },
+  {
+    "id": "L1-002", "scenario": "simple-faq", "intent": "fact_lookup",
+    "input": "Who founded Apple?", "expected_mode": "fast", "expected_intent": "fact_lookup"
+  },
+  {
+    "id": "L1-003", "scenario": "simple-faq", "intent": "definition",
+    "input": "Python 是什么意思", "expected_mode": "fast", "expected_intent": "definition"
+  },
+  {
+    "id": "L1-004", "scenario": "simple-faq", "intent": "list_one",
+    "input": "列出 SOLID 设计原则有哪些", "expected_mode": "fast", "expected_intent": "list_one"
+  },
+  {
+    "id": "L1-005", "scenario": "simple-math", "intent": "calculation",
+    "input": "1.25 乘以 0.8 等于多少", "expected_mode": "fast", "expected_intent": "calculation"
+  },
+  {
+    "id": "L1-006", "scenario": "simple-math", "intent": "calculation",
+    "input": "1024 的平方根是多少", "expected_mode": "fast", "expected_intent": "calculation"
+  },
+  {
+    "id": "L1-007", "scenario": "simple-math", "intent": "arithmetic",
+    "input": "求 3x² - 12x + 9 = 0 的根", "expected_mode": "fast", "expected_intent": "arithmetic"
+  },
+  {
+    "id": "L1-008", "scenario": "simple-math", "intent": "arithmetic",
+    "input": "log₂(8) + log₃(9) = ?", "expected_mode": "fast", "expected_intent": "arithmetic"
+  },
+  {
+    "id": "L1-009", "scenario": "social", "intent": "greeting",
+    "input": "你好", "expected_mode": "fast", "expected_intent": "greeting"
+  },
+  {
+    "id": "L1-010", "scenario": "social", "intent": "thanks",
+    "input": "谢谢你的帮助！", "expected_mode": "fast", "expected_intent": "thanks"
+  },
+  {
+    "id": "L1-011", "scenario": "social", "intent": "farewell",
+    "input": "那先这样，回聊", "expected_mode": "fast", "expected_intent": "farewell"
+  },
+  {
+    "id": "L1-012", "scenario": "social", "intent": "opinion",
+    "input": "你觉得 TypeScript 和 JavaScript 哪个更好", "expected_mode": "fast", "expected_intent": "opinion"
+  },
+  {
+    "id": "L1-013", "scenario": "definition", "intent": "one_def",
+    "input": "解释一下什么是微服务架构", "expected_mode": "fast", "expected_intent": "one_def"
+  },
+  {
+    "id": "L1-014", "scenario": "definition", "intent": "one_def",
+    "input": "什么是 RESTful API", "expected_mode": "fast", "expected_intent": "one_def"
+  },
+  {
+    "id": "L1-015", "scenario": "tool-live", "intent": "live_data",
+    "input": "帮我查一下深圳今天的天气", "expected_mode": "slow", "expected_intent": "single_tool"
+  },
+  {
+    "id": "L1-016", "scenario": "tool-live", "intent": "live_data",
+    "input": "查一下比特币现在的价格", "expected_mode": "slow", "expected_intent": "single_tool"
+  },
+  {
+    "id": "L1-017", "scenario": "code-exec", "intent": "code_write",
+    "input": "写一段 Python 读取 JSON 文件的代码", "expected_mode": "slow", "expected_intent": "code_write"
+  },
+  {
+    "id": "L1-018", "scenario": "code-exec", "intent": "code_write",
+    "input": "用 Python 把数组去重", "expected_mode": "slow", "expected_intent": "code_write"
+  },
+  {
+    "id": "L1-019", "scenario": "code-exec", "intent": "code_write",
+    "input": "写一个 quicksort 函数", "expected_mode": "slow", "expected_intent": "code_write"
+  },
+  {
+    "id": "L1-020", "scenario": "code-exec", "intent": "code_write",
+    "input": "帮我写个斐波那契数列的递归实现", "expected_mode": "slow", "expected_intent": "code_write"
+  },
+  {
+    "id": "L1-021", "scenario": "summary", "intent": "one_para",
+    "input": "用一句话概括：机器学习是啥", "expected_mode": "fast", "expected_intent": "one_para"
+  },
+  {
+    "id": "L1-022", "scenario": "summary", "intent": "one_para",
+    "input": "一句话总结 TCP 和 UDP 的区别", "expected_mode": "fast", "expected_intent": "one_para"
+  },
+  {
+    "id": "L1-023", "scenario": "clarify", "intent": "ask_info",
+    "input": "帮我写个函数", "expected_mode": "fast", "expected_intent": "needs_clarification"
+  },
+  {
+    "id": "L1-024", "scenario": "clarify", "intent": "ask_info",
+    "input": "给我推荐一个框架", "expected_mode": "fast", "expected_intent": "needs_clarification"
+  },
+  {
+    "id": "L1-025", "scenario": "deep-reason", "intent": "simple_opinion",
+    "input": "程序员应该懂算法吗？", "expected_mode": "fast", "expected_intent": "simple_opinion"
+  },
+  {
+    "id": "L1-026", "scenario": "deep-reason", "intent": "simple_opinion",
+    "input": "AI 会取代程序员吗", "expected_mode": "fast", "expected_intent": "simple_opinion"
+  },
+  {
+    "id": "L1-027", "scenario": "english", "intent": "vocabulary",
+    "input": "What does 'serendipity' mean?", "expected_mode": "fast", "expected_intent": "vocabulary"
+  },
+  {
+    "id": "L1-028", "scenario": "english", "intent": "translation",
+    "input": "帮我翻译：The quick brown fox", "expected_mode": "fast", "expected_intent": "translation"
+  },
+  {
+    "id": "L1-029", "scenario": "format", "intent": "reformat",
+    "input": "帮我把这段文字转成 JSON", "expected_mode": "fast", "expected_intent": "reformat"
+  },
+  {
+    "id": "L1-030", "scenario": "format", "intent": "reformat",
+    "input": "把这段 Markdown 转成表格", "expected_mode": "slow", "expected_intent": "reformat"
+  }
+]

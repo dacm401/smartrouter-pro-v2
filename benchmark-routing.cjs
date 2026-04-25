@@ -1,14 +1,9 @@
 /**
- * Sprint 58: L2 在线 Benchmark — LLM 路由 vs 离线规则
+ * L1/L2 在线 Benchmark — LLM 路由 vs 离线规则
  *
- * 加载 30 条 L2 测试用例，直接调用 Fast 模型（Manager）做路由判决，
- * 与离线规则基线对比，建立 LLM 路由在 L2 场景的真实基线。
- *
- * SiliconFlow: node benchmark-routing.cjs --mode layer2 --provider siliconflow
- * Ollama:      node benchmark-routing.cjs --mode layer2 --provider ollama
- * 离线规则:   node benchmark-routing.cjs --mode layer2 --provider offline
- *
- * 注：离线规则基线使用 benchmark-ci.cjs 的 L2 套件规则集（与 Sprint 56 一致）。
+ * 加载测试用例，直接调用 Fast 模型（Manager）做路由判决。
+ * SiliconFlow: node benchmark-routing.cjs --mode layer1 --provider siliconflow
+ * 离线规则:   node benchmark-routing.cjs --mode layer1 --provider offline
  */
 
 // ── .env 加载（必须最早执行，在 API 调用前注入 key）──────────────────────────────
@@ -36,8 +31,13 @@ const modeArg = args.includes("--mode") ? args[args.indexOf("--mode") + 1] : "la
 const provider = args.includes("--provider") ? args[args.indexOf("--provider") + 1] : "siliconflow";
 
 // ── 测试用例加载 ─────────────────────────────────────────────────────────────
+const LAYER_FILES = {
+  layer1: "benchmark-layer1.json",
+  layer2: "benchmark-layer2.json",
+};
+const caseFile = LAYER_FILES[modeArg] || "benchmark-layer2.json";
 const CASES = JSON.parse(
-  fs.readFileSync(path.join(__dirname, "evaluation", "tasks", "benchmark-layer2.json"), "utf8")
+  fs.readFileSync(path.join(__dirname, "evaluation", "tasks", caseFile), "utf8")
 );
 
 // ── Manager System Prompt（诊断后验证：Qwen2.5-7B 可稳定输出）
@@ -241,11 +241,21 @@ async function runOllama(tc) {
   }
 }
 
-// ── 离线规则基准（与 benchmark-ci.cjs L2 套件规则集对齐）──────────────────────
+// ── 离线规则基准（L1/L2 分流）───────────────────────────────────────────────
 function runOfflineRules(tc) {
   const { input, expected_mode, expected_intent, scenario } = tc;
   const s = input.trim();
   const text = s.toLowerCase();
+
+  // === L1 保守规则：只对明确复杂任务路由到 slow ===
+  if (modeArg === "layer1") {
+    // L1: 明确复杂/多步才 slow
+    if (/先.*再|先.*然后|先.*最后|多步|链式|流程/.test(s)) return { ...base(tc), actual_mode: "slow" };
+    if (/实现.*算法|调试.*bug|系统设计|分布式/.test(s)) return { ...base(tc), actual_mode: "slow" };
+    if (/分析.*报告|研究.*市场|阅读.*论文/.test(s)) return { ...base(tc), actual_mode: "slow" };
+    if (/比较.*优缺点|对比.*差异/.test(s)) return { ...base(tc), actual_mode: "slow" };
+    return { ...base(tc), actual_mode: "fast" };
+  }
 
   // === Sprint 56 benchmark-ci.cjs ruleRouter L2 patterns ===
 
@@ -379,7 +389,7 @@ function summarize(results, label) {
 
 // ── 主函数 ───────────────────────────────────────────────────────────────────
 async function main() {
-  console.log(`\n=== Sprint 58: L2 在线 Benchmark ===`);
+  console.log(`\n=== L1/L2 在线 Benchmark ===`);
   console.log(`  Provider: ${provider}`);
   console.log(`  Cases:    ${CASES.length}`);
   console.log(`  Model:    ${provider === "siliconflow" ? (process.env.FAST_MODEL || "Qwen/Qwen2.5-7B-Instruct") : provider === "ollama" ? (process.env.OLLAMA_MODEL || "qwen2.5:7b") : "offline_rule"}\n`);
@@ -426,7 +436,7 @@ async function main() {
   // 保存结果
   const outDir = path.join(__dirname, "results");
   fs.mkdirSync(outDir, { recursive: true });
-  const outFile = path.join(outDir, `layer2-benchmark-${provider}-${new Date().toISOString().split("T")[0]}.json`);
+  const outFile = path.join(outDir, `${modeArg}-benchmark-${provider}-${new Date().toISOString().split("T")[0]}.json`);
   fs.writeFileSync(outFile, JSON.stringify({
     provider,
     model: provider === "siliconflow"
