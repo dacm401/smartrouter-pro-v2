@@ -267,24 +267,86 @@ export interface EvidenceRetrievalOptions {
   queryKeys?: string[];
   /** 返回数量上限 */
   maxResults?: number;
+  // ── E1/E2 (Sprint 54): Intent-aware evidence boost ──────────────────────
+  /**
+   * E1: 用户消息的意图分类（来自 LLM-Native Router 或 rule-router）。
+   * 用于给 intent 相关的 evidence source 加权。
+   * 取值：reasoning / code / creative / chat / knowledge / simple_qa
+   */
+  intentCategory?: string;
+  /**
+   * E2: 用户原始消息文本（用于语义关键词匹配，弥补 queryKeys 不全的情况）。
+   */
+  userMessage?: string;
+}
+
+/**
+ * E1/E2 Sprint 54: intent 类别 → evidence source 偏好映射。
+ *
+ * 不同意图类别对 evidence source 有不同的价值权重：
+ * - reasoning  → 偏好 web_search（外部事实/数据来源）
+ * - code        → 偏好 http_request（API/接口文档类）
+ * - knowledge   → 偏好 web_search / manual（知识类）
+ * - creative    → 不特别偏好（纯创意任务 evidence 价值低）
+ * - chat/simple_qa → 轻度偏好 manual（用户主动存的）
+ */
+const INTENT_EVIDENCE_SOURCE_BOOST: Record<string, Partial<Record<"web_search" | "http_request" | "manual", number>>> = {
+  reasoning:  { web_search: 1.4, http_request: 1.1, manual: 1.0 },
+  code:       { web_search: 1.1, http_request: 1.5, manual: 1.0 },
+  knowledge:  { web_search: 1.4, http_request: 1.0, manual: 1.3 },
+  creative:   { web_search: 1.0, http_request: 1.0, manual: 1.1 },
+  chat:       { web_search: 1.0, http_request: 1.0, manual: 1.2 },
+  simple_qa:  { web_search: 1.1, http_request: 1.0, manual: 1.2 },
+};
+
+/**
+ * E2 Sprint 54: 从 userMessage 中提取语义关键词（补充 queryKeys）。
+ * 提取中英文词汇，过滤停用词，取 top-N。
+ */
+function extractSemanticKeywords(userMessage: string, topN = 5): string[] {
+  const stopWords = new Set([
+    "的", "了", "是", "在", "我", "有", "和", "就", "不", "人", "都", "一", "一个",
+    "上", "也", "很", "到", "说", "要", "去", "你", "会", "着", "没有", "看", "好",
+    "自己", "这", "那", "什么", "怎么", "帮", "我", "请", "给", "一下", "可以",
+    "the", "a", "an", "is", "are", "was", "were", "in", "on", "at", "to", "for",
+    "of", "with", "by", "from", "and", "or", "but", "how", "what", "why", "when",
+  ]);
+  // 简单分词：按空格 + 标点切割，过滤停用词
+  const tokens = userMessage
+    .toLowerCase()
+    .split(/[\s，。？！、；：""''【】《》\(\)\[\],.?!;:"']+/)
+    .filter((t) => t.length >= 2 && !stopWords.has(t));
+  // 去重 + 取前 topN
+  return [...new Set(tokens)].slice(0, topN);
 }
 
 /**
  * Sprint 32 P2: 检索与当前任务相关的 Evidence，供 Task Brief 的 relevant_facts 使用。
  *
- * Evidence 关联策略：
+ * Evidence 关联策略（Sprint 54 E1/E2 升级）：
  * 1. 按 relevance_score 降序
  * 2. 过滤 relevance_score > 0.3 的条目
- * 3. 对 queryKeys 匹配的内容加分
- * 4. 返回格式化后的字符串数组
+ * 3. 对 queryKeys 匹配的内容加分（原有）
+ * 4. E2: 对 userMessage 提取的语义关键词加分（新增）
+ * 5. E1: 对 intentCategory 对应的 source 类型加权（新增）
+ * 6. 返回格式化后的字符串数组
  */
 export async function retrieveEvidenceForContext(
   options: EvidenceRetrievalOptions
 ): Promise<string[]> {
-  const { userId, queryKeys = [], maxResults = 5 } = options;
+  const { userId, queryKeys = [], maxResults = 5, intentCategory, userMessage } = options;
+
+  // E2: 从 userMessage 补充语义关键词
+  const semanticKeys = userMessage ? extractSemanticKeywords(userMessage) : [];
+  const allKeys = [...new Set([...queryKeys, ...semanticKeys])];
+
+  // E1: 获取 intent 对应的 source boost 映射
+  const sourceBoostMap = intentCategory
+    ? (INTENT_EVIDENCE_SOURCE_BOOST[intentCategory] ?? {})
+    : {};
 
   try {
-    const evidence = await EvidenceRepo.getEvidenceForUser(userId, maxResults * 2);
+    const evidence = await EvidenceRepo.getEvidenceForUser(userId, maxResults * 3);
     if (!evidence || evidence.length === 0) return [];
 
     // 过滤 relevance_score > 0.3
@@ -293,15 +355,23 @@ export async function retrieveEvidenceForContext(
       return false;
     });
 
-    // 如果有 queryKeys，对匹配的证据额外加权
-    let scored = relevant.map((e: { relevance_score: number | null; content: string; source_metadata: Record<string, unknown> | null; source: string }) => {
+    // 综合打分：base + queryKeys 加分 + semantic 加分 + intent source boost
+    const scored = relevant.map((e: { relevance_score: number | null; content: string; source_metadata: Record<string, unknown> | null; source: string }) => {
       let score = typeof e.relevance_score === "number" ? e.relevance_score : 0;
-      if (queryKeys.length > 0) {
+
+      // 关键词匹配加分（queryKeys + 语义词）
+      if (allKeys.length > 0) {
         const contentLower = e.content.toLowerCase();
-        const matchedKeys = queryKeys.filter((kw: string) => contentLower.includes(kw.toLowerCase()));
+        const matchedKeys = allKeys.filter((kw: string) => contentLower.includes(kw.toLowerCase()));
         score += matchedKeys.length * 0.1;
       }
-      return { evidence: e, score };
+
+      // E1: intent-aware source boost
+      const sourceKey = e.source as "web_search" | "http_request" | "manual";
+      const boost = sourceBoostMap[sourceKey] ?? 1.0;
+      score *= boost;
+
+      return { evidence: e, score, intentBoost: boost };
     });
 
     // 排序取 top N

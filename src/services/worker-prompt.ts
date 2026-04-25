@@ -12,6 +12,11 @@
  *   prompt-assembler.ts：Fast/Slow 路由 → 人格化 persona + intent hints
  *   worker-prompt.ts：Manager-Worker 路径 → 结构化 command → Worker 专注执行
  *
+ * S1 Review (Sprint 54):
+ *   - 加入 intentCategory → system prompt intent hint（告知 Worker 任务意图类别）
+ *   - WorkerPromptInput 新增 intentCategory 字段（与 E1/E2 对齐）
+ *   - 修正 compressionRatio 计算（加入 input_materials 估算，负值截断为 0）
+ *
  * Phase 3.0 Sprint
  */
 
@@ -24,12 +29,40 @@ import type { WorkerResult } from "../types/index.js";
 
 // ── Worker System Prompt ────────────────────────────────────────────────────────
 
+/** S1 (Sprint 54): intent category → 中文任务类型描述 */
+const INTENT_ZH_LABEL: Record<string, string> = {
+  reasoning:  "深度推理分析",
+  code:       "代码/技术执行",
+  creative:   "创意写作",
+  knowledge:  "知识检索",
+  chat:       "对话交流",
+  simple_qa:  "简单问答",
+};
+/** S1 (Sprint 54): intent category → 英文任务类型描述 */
+const INTENT_EN_LABEL: Record<string, string> = {
+  reasoning:  "deep reasoning & analysis",
+  code:       "code / technical execution",
+  creative:   "creative writing",
+  knowledge:  "knowledge retrieval",
+  chat:       "conversational response",
+  simple_qa:  "simple Q&A",
+};
+
 function buildWorkerSystemPrompt(
   workerHint: WorkerHint,
-  lang: "zh" | "en"
+  lang: "zh" | "en",
+  intentCategory?: string
 ): string {
+  // S1: intent hint 段落
+  const intentHintZh = intentCategory
+    ? `\n【任务类型提示】本次任务意图类别：**${INTENT_ZH_LABEL[intentCategory] ?? intentCategory}**。请据此调整输出深度和格式。`
+    : "";
+  const intentHintEn = intentCategory
+    ? `\n【Task Type Hint】This task's intent category: **${INTENT_EN_LABEL[intentCategory] ?? intentCategory}**. Adjust output depth and format accordingly.`
+    : "";
+
   // 中文版
-  const zhPrompt = `你是 SmartRouter Pro 的执行专家（${workerHint === "slow_analyst" ? "深度分析 Worker" : workerHint === "execute_worker" ? "任务执行 Worker" : "搜索 Worker"}）。
+  const zhPrompt = `你是 SmartRouter Pro 的执行专家（${workerHint === "slow_analyst" ? "深度分析 Worker" : workerHint === "execute_worker" ? "任务执行 Worker" : "搜索 Worker"}）。${intentHintZh}
 
 【你的职责】
 - 只关注任务本身，不关心用户是谁或怎么说话
@@ -67,7 +100,7 @@ function buildWorkerSystemPrompt(
 - 不要在输出中加"以下是分析结果"这类废话
 - 直接给出结果`;
   // 英文版
-  const enPrompt = `You are SmartRouter Pro's execution specialist (${workerHint === "slow_analyst" ? "Deep Analysis Worker" : workerHint === "execute_worker" ? "Task Execution Worker" : "Search Worker"}).
+  const enPrompt = `You are SmartRouter Pro's execution specialist (${workerHint === "slow_analyst" ? "Deep Analysis Worker" : workerHint === "execute_worker" ? "Task Execution Worker" : "Search Worker"}).${intentHintEn}
 
 【Your Role】
 - Focus only on the task itself, not on who the user is or how to speak
@@ -200,6 +233,12 @@ export interface WorkerPromptInput {
   memorySummary?: string;
   /** 语言 */
   lang: "zh" | "en";
+  /**
+   * S1 (Sprint 54): 用户意图类别（与 E1/E2 对齐）。
+   * 取值：reasoning / code / creative / chat / knowledge / simple_qa
+   * 用于向 Worker 系统 prompt 注入任务类型提示，让 Worker 按意图调整输出深度和格式。
+   */
+  intentCategory?: string;
 }
 
 export interface WorkerPromptOutput {
@@ -220,10 +259,12 @@ export function buildWorkerPrompt(input: WorkerPromptInput): WorkerPromptOutput 
     evidenceContent = [],
     memorySummary,
     lang = "zh",
+    intentCategory,
   } = input;
 
   const workerHint = command.worker_hint ?? "slow_analyst";
-  const systemPrompt = buildWorkerSystemPrompt(workerHint, lang);
+  // S1: 传入 intentCategory，让 Worker system prompt 注入任务类型提示
+  const systemPrompt = buildWorkerSystemPrompt(workerHint, lang, intentCategory);
 
   // 构建 userPrompt — 纯任务上下文，不含 persona
   const sections: string[] = [];
@@ -283,16 +324,22 @@ export function buildWorkerPrompt(input: WorkerPromptInput): WorkerPromptOutput 
 
   const userPrompt = sections.join("\n\n");
 
-  // 计算压缩比：原始输入 token 估算 vs Worker 实际收到的 token 估算
+  // S1 fix: compressionRatio 修正
+  // 原始估算包含 input_materials，负值截断为 0
+  const materialsLen = command.input_materials
+    ? command.input_materials.reduce((sum, m) => sum + (m.content?.length ?? 0), 0)
+    : 0;
   const originalEstimate = (
     command.task_brief.length +
     command.goal.length +
     (command.constraints?.join("").length ?? 0) +
-    (memorySummary?.length ?? 0)
+    (memorySummary?.length ?? 0) +
+    materialsLen
   );
   const compressedEstimate = userPrompt.length + systemPrompt.length;
-  const compressionRatio = compressedEstimate > 0
-    ? Math.round((1 - compressedEstimate / Math.max(originalEstimate, 1)) * 100)
+  // 正值表示压缩（condensed < original），负值意味着 prompt 比原始更长（注入了系统 prompt）→ 截断为 0
+  const compressionRatio = originalEstimate > 0
+    ? Math.max(0, Math.round((1 - compressedEstimate / originalEstimate) * 100))
     : 0;
 
   return {
